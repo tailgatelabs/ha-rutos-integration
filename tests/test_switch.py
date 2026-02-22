@@ -1,0 +1,72 @@
+"""Tests for the RutOS switch platform."""
+
+from __future__ import annotations
+
+from unittest.mock import AsyncMock
+
+import pytest
+
+from custom_components.rutos.api import RutOSAPIError
+from custom_components.rutos.coordinator import RutOSDataUpdateCoordinator
+from custom_components.rutos.switch import RutOSInterfaceSwitch
+
+
+class TestRutOSInterfaceSwitch:
+    """Tests for the WAN interface switch."""
+
+    def test_creates_per_interface(
+        self, mock_coordinator: RutOSDataUpdateCoordinator
+    ):
+        """Test one switch is created per WAN interface."""
+        switches = [
+            RutOSInterfaceSwitch(mock_coordinator, iface["name"])
+            for iface in mock_coordinator.data.wan_interfaces
+        ]
+        assert len(switches) == 2
+        names = {s._interface_name for s in switches}
+        assert names == {"wan", "mob1s1a1"}
+
+    def test_is_on_reflects_enabled_state(
+        self, mock_coordinator: RutOSDataUpdateCoordinator
+    ):
+        """Test is_on matches interface enabled field."""
+        switch_wan = RutOSInterfaceSwitch(mock_coordinator, "wan")
+        assert switch_wan.is_on is True
+
+        switch_mob = RutOSInterfaceSwitch(mock_coordinator, "mob1s1a1")
+        assert switch_mob.is_on is False
+
+    async def test_turn_on_calls_api(
+        self, mock_coordinator: RutOSDataUpdateCoordinator
+    ):
+        """Test turn_on calls set_interface_enabled(name, True) + refresh."""
+        mock_coordinator.async_request_refresh = AsyncMock()
+        switch = RutOSInterfaceSwitch(mock_coordinator, "wan")
+
+        await switch.async_turn_on()
+
+        mock_coordinator.api.set_interface_enabled.assert_awaited_once_with("wan", True)
+        mock_coordinator.async_request_refresh.assert_awaited_once()
+
+    async def test_turn_off_calls_api(
+        self, mock_coordinator: RutOSDataUpdateCoordinator
+    ):
+        """Test turn_off calls set_interface_enabled(name, False) + refresh."""
+        mock_coordinator.async_request_refresh = AsyncMock()
+        switch = RutOSInterfaceSwitch(mock_coordinator, "mob1s1a1")
+
+        await switch.async_turn_off()
+
+        mock_coordinator.api.set_interface_enabled.assert_awaited_once_with("mob1s1a1", False)
+        mock_coordinator.async_request_refresh.assert_awaited_once()
+
+    async def test_api_error_propagates(
+        self, mock_coordinator: RutOSDataUpdateCoordinator
+    ):
+        """Test API errors are not silently swallowed."""
+        mock_coordinator.api.set_interface_enabled.side_effect = RutOSAPIError("fail")
+        mock_coordinator.async_request_refresh = AsyncMock()
+        switch = RutOSInterfaceSwitch(mock_coordinator, "wan")
+
+        with pytest.raises(RutOSAPIError):
+            await switch.async_turn_on()

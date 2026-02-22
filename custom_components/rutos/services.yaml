@@ -1,0 +1,11 @@
+set_failover_order:
+  name: Set failover order
+  description: Set the WAN interface failover priority order.
+  fields:
+    interfaces:
+      name: Interfaces
+      description: Ordered list of WAN interface names (highest priority first).
+      required: true
+      example: '["wan", "mob1s1a1", "mob2s1a1"]'
+      selector:
+        object:

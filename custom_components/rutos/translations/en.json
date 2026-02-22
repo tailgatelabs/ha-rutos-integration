@@ -1,0 +1,52 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to RutOS device",
+        "description": "Enter the connection details for your Teltonika router.",
+        "data": {
+          "host": "Host",
+          "username": "Username",
+          "password": "Password"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect to the device.",
+      "invalid_auth": "Invalid username or password.",
+      "unknown": "An unexpected error occurred."
+    },
+    "abort": {
+      "already_configured": "This device is already configured."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "wan_status": {
+        "name": "{interface} status"
+      },
+      "wan_ip_address": {
+        "name": "{interface} IP address"
+      },
+      "wan_protocol": {
+        "name": "{interface} protocol"
+      },
+      "wan_uptime": {
+        "name": "{interface} uptime"
+      },
+      "active_wan": {
+        "name": "Active WAN interface"
+      }
+    },
+    "binary_sensor": {
+      "internet_connectivity": {
+        "name": "Internet connectivity"
+      }
+    },
+    "switch": {
+      "wan_enabled": {
+        "name": "{interface} enabled"
+      }
+    }
+  }
+}

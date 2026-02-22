@@ -155,19 +155,24 @@ class RutOSAPI:
 
     async def get_device_info(self) -> dict[str, Any]:
         """Fetch device information (model, serial, MAC, firmware)."""
-        mnf_info = await self.call("file", "exec", {
-            "command": "mnf_info",
-            "params": ["--name", "--serial", "--mac", "--batch"],
-        })
-        # mnf_info returns stdout with key=value lines
         info: dict[str, Any] = {}
-        stdout = mnf_info.get("stdout", "") if isinstance(mnf_info, dict) else ""
-        for line in stdout.strip().split("\n"):
-            if "=" in line:
-                key, _, value = line.partition("=")
-                info[key.strip()] = value.strip()
 
-        # Also get firmware version
+        # Try mnf_info first (requires file.exec ACL permission)
+        try:
+            mnf_info = await self.call("file", "exec", {
+                "command": "mnf_info",
+                "params": ["--name", "--serial", "--mac", "--batch"],
+            })
+            # mnf_info returns stdout with key=value lines
+            stdout = mnf_info.get("stdout", "") if isinstance(mnf_info, dict) else ""
+            for line in stdout.strip().split("\n"):
+                if "=" in line:
+                    key, _, value = line.partition("=")
+                    info[key.strip()] = value.strip()
+        except RutOSAPIError:
+            _LOGGER.debug("Could not fetch mnf_info (file.exec may not be permitted)")
+
+        # Also get firmware version and model from system.board
         try:
             board = await self.call("system", "board")
             if isinstance(board, dict):

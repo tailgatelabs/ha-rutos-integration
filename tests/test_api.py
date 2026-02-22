@@ -275,6 +275,28 @@ class TestGetDeviceInfo:
             assert info["model"] == "Teltonika RUTX50"
 
 
+    async def test_get_device_info_falls_back_when_file_exec_denied(self, api_client):
+        """Test that device info falls back to board info when file.exec is denied."""
+        with aioresponses() as m:
+            m.post(TEST_URL, payload=_login_response())
+            # mnf_info denied (e.g., ACL restriction on file.exec)
+            m.post(TEST_URL, payload={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "error": {"code": -32002, "message": "Access denied"},
+            })
+            # board info response still works
+            m.post(TEST_URL, payload=_call_response({
+                "model": "Teltonika RUTX50",
+                "release": {"description": "RUTX_R_00.07.06.1"},
+            }))
+
+            info = await api_client.get_device_info()
+
+            assert info["model"] == "Teltonika RUTX50"
+            assert info["firmware"] == "RUTX_R_00.07.06.1"
+
+
 class TestGetWanInterfaces:
     """Tests for get_wan_interfaces."""
 

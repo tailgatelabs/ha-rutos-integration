@@ -1,4 +1,4 @@
-"""Tests for the RutOS API client."""
+"""Tests for the RutOS REST API client."""
 
 from __future__ import annotations
 
@@ -9,23 +9,20 @@ from unittest.mock import AsyncMock, patch
 import aiohttp
 import pytest
 from aioresponses import aioresponses
-from yarl import URL
 
 from custom_components.rutos.api import (
-    JSONRPC_SESSION_EXPIRED,
     RutOSAPI,
     RutOSAPIError,
     RutOSAuthError,
     RutOSConnectionError,
 )
-from custom_components.rutos.const import API_PATH, SESSION_EXPIRY, SESSION_REFRESH_MARGIN
+from custom_components.rutos.const import API_PATH, SESSION_REFRESH_MARGIN
 
 TEST_HOST = "192.168.1.1"
-TEST_URL = f"https://{TEST_HOST}{API_PATH}"
-TEST_URL_KEY = ("POST", URL(TEST_URL))
+TEST_BASE_URL = f"https://{TEST_HOST}{API_PATH}"
 TEST_USER = "admin"
 TEST_PASS = "admin01"
-TEST_SESSION_ID = "abcdef1234567890abcdef1234567890"
+TEST_TOKEN = "test-token-abc123"
 
 
 @pytest.fixture
@@ -37,167 +34,204 @@ async def api_client():
     await session.close()
 
 
-def _login_response(session_id: str = TEST_SESSION_ID):
+def _url(path: str) -> str:
+    """Build a full API URL."""
+    return f"{TEST_BASE_URL}{path}"
+
+
+def _login_success(token: str = TEST_TOKEN, expires: int = 300):
     """Return a successful login response payload."""
     return {
-        "jsonrpc": "2.0",
-        "id": 1,
-        "result": [0, {"ubus_rpc_session": session_id}],
+        "success": True,
+        "data": {
+            "username": "admin",
+            "group": "root",
+            "token": token,
+            "expires": expires,
+        },
     }
 
 
-def _call_response(data=None, status_code=0):
-    """Return a successful ubus call response."""
-    result = [status_code, data] if data is not None else [status_code]
-    return {"jsonrpc": "2.0", "id": 1, "result": result}
+def _login_failure(error: str = "Invalid username and/or password!"):
+    """Return a failed login response payload."""
+    return {
+        "success": False,
+        "errors": [{"source": "Authorization", "error": error, "code": 120}],
+    }
 
 
-def _error_response(message="Something went wrong"):
-    """Return a JSON-RPC error response."""
-    return {"jsonrpc": "2.0", "id": 1, "error": {"code": -1, "message": message}}
+def _success(data=None):
+    """Return a successful API response."""
+    if data is None:
+        data = {}
+    return {"success": True, "data": data}
+
+
+def _error(error: str = "Something went wrong", source: str = "General", code: int = 100):
+    """Return an error API response."""
+    return {
+        "success": False,
+        "errors": [{"source": source, "error": error, "code": code}],
+    }
 
 
 class TestLogin:
     """Tests for login/authentication."""
 
     async def test_login_success(self, api_client):
-        """Test successful login stores session and sets expiry."""
+        """Test successful login stores token and sets expiry."""
         with aioresponses() as m:
-            m.post(TEST_URL, payload=_login_response())
+            m.post(_url("/login"), payload=_login_success())
 
             await api_client.login()
 
-            assert api_client._ubus_session == TEST_SESSION_ID
-            assert api_client._session_expiry > time.monotonic()
+            assert api_client._token == TEST_TOKEN
+            assert api_client._token_expiry > time.monotonic()
+
+    async def test_login_custom_expiry(self, api_client):
+        """Test login respects the expires field from response."""
+        with aioresponses() as m:
+            m.post(_url("/login"), payload=_login_success(expires=600))
+
+            before = time.monotonic()
+            await api_client.login()
+
+            assert api_client._token_expiry >= before + 600
 
     async def test_login_invalid_credentials(self, api_client):
-        """Test login with non-zero status raises RutOSAuthError."""
+        """Test login with bad credentials raises RutOSAuthError."""
         with aioresponses() as m:
-            m.post(TEST_URL, payload={
-                "jsonrpc": "2.0", "id": 1,
-                "result": [6, {}],
-            })
+            m.post(_url("/login"), payload=_login_failure(), status=401)
 
-            with pytest.raises(RutOSAuthError, match="status code 6"):
+            with pytest.raises(RutOSAuthError, match="Invalid username"):
                 await api_client.login()
 
-    async def test_login_unexpected_format(self, api_client):
-        """Test malformed login response raises RutOSAuthError."""
+    async def test_login_missing_token(self, api_client):
+        """Test login response without token raises RutOSAuthError."""
         with aioresponses() as m:
-            m.post(TEST_URL, payload={
-                "jsonrpc": "2.0", "id": 1,
-                "result": "not-a-list",
-            })
+            m.post(
+                _url("/login"),
+                payload={"success": True, "data": {"username": "admin"}},
+            )
 
-            with pytest.raises(RutOSAuthError, match="Unexpected login response"):
+            with pytest.raises(RutOSAuthError, match="No token"):
                 await api_client.login()
 
-    async def test_login_missing_session_id(self, api_client):
-        """Test login response without session ID raises RutOSAuthError."""
+    async def test_login_connection_error(self, api_client):
+        """Test connection error during login raises RutOSConnectionError."""
         with aioresponses() as m:
-            m.post(TEST_URL, payload={
-                "jsonrpc": "2.0", "id": 1,
-                "result": [0, {"other": "data"}],
-            })
+            m.post(_url("/login"), exception=aiohttp.ClientConnectionError("refused"))
 
-            with pytest.raises(RutOSAuthError, match="No session ID"):
+            with pytest.raises(RutOSConnectionError, match="Cannot connect"):
                 await api_client.login()
 
 
 class TestRequest:
-    """Tests for the low-level _request method."""
+    """Tests for the authenticated _request method."""
+
+    async def test_get_request_success(self, api_client):
+        """Test successful GET request returns data."""
+        with aioresponses() as m:
+            m.post(_url("/login"), payload=_login_success())
+            m.get(_url("/test/endpoint"), payload=_success({"key": "value"}))
+
+            result = await api_client.get("/test/endpoint")
+
+            assert result == {"key": "value"}
+
+    async def test_put_request_success(self, api_client):
+        """Test successful PUT request returns data."""
+        with aioresponses() as m:
+            m.post(_url("/login"), payload=_login_success())
+            m.put(_url("/test/endpoint"), payload=_success({"updated": True}))
+
+            result = await api_client.put("/test/endpoint", {"data": {"field": "val"}})
+
+            assert result == {"updated": True}
+
+    async def test_request_includes_bearer_token(self, api_client):
+        """Test authenticated requests include the Bearer token."""
+        with aioresponses() as m:
+            m.post(_url("/login"), payload=_login_success())
+            m.get(_url("/test"), payload=_success())
+
+            await api_client.get("/test")
+
+            # Check the GET request had the Authorization header
+            for key, requests in m.requests.items():
+                if key[0] == "GET":
+                    headers = requests[0].kwargs.get("headers", {})
+                    assert headers.get("Authorization") == f"Bearer {TEST_TOKEN}"
 
     async def test_request_connection_error(self, api_client):
         """Test connection error raises RutOSConnectionError."""
         with aioresponses() as m:
-            m.post(TEST_URL, exception=aiohttp.ClientConnectionError("refused"))
+            m.post(_url("/login"), payload=_login_success())
+            m.get(_url("/test"), exception=aiohttp.ClientConnectionError("refused"))
 
             with pytest.raises(RutOSConnectionError, match="Cannot connect"):
-                await api_client._request("call", [])
+                await api_client.get("/test")
 
-    async def test_request_jsonrpc_error(self, api_client):
-        """Test JSON-RPC error response raises RutOSAPIError."""
+    async def test_request_api_error(self, api_client):
+        """Test API error response raises RutOSAPIError."""
         with aioresponses() as m:
-            m.post(TEST_URL, payload=_error_response("bad method"))
+            m.post(_url("/login"), payload=_login_success())
+            m.get(_url("/test"), payload=_error("bad request"))
 
-            with pytest.raises(RutOSAPIError, match="JSON-RPC error"):
-                await api_client._request("call", [])
+            with pytest.raises(RutOSAPIError, match="bad request"):
+                await api_client.get("/test")
 
-
-class TestCall:
-    """Tests for the authenticated call method."""
-
-    async def test_call_sends_session_id(self, api_client):
-        """Test that authenticated calls include the session ID."""
+    async def test_request_http_error(self, api_client):
+        """Test non-401 HTTP error raises RutOSAPIError."""
         with aioresponses() as m:
-            m.post(TEST_URL, payload=_login_response())
-            m.post(TEST_URL, payload=_call_response({"key": "value"}))
+            m.post(_url("/login"), payload=_login_success())
+            m.get(_url("/test"), status=500)
 
-            result = await api_client.call("test", "method")
+            with pytest.raises(RutOSAPIError, match="HTTP 500"):
+                await api_client.get("/test")
 
-            assert result == {"key": "value"}
-            # Verify the second request included the session
-            requests = m.requests[TEST_URL_KEY]
-            body = requests[1].kwargs["json"]
-            assert body["params"][0] == TEST_SESSION_ID
-
-    async def test_call_returns_data_payload(self, api_client):
-        """Test that call extracts the data from [0, data] result."""
+    async def test_request_auth_error_in_body(self, api_client):
+        """Test Authorization error in response body raises RutOSAuthError."""
         with aioresponses() as m:
-            m.post(TEST_URL, payload=_login_response())
-            m.post(TEST_URL, payload=_call_response({"result": "ok"}))
-
-            result = await api_client.call("svc", "meth")
-            assert result == {"result": "ok"}
-
-    async def test_call_non_zero_status_raises(self, api_client):
-        """Test non-zero status code raises RutOSAPIError."""
-        with aioresponses() as m:
-            m.post(TEST_URL, payload=_login_response())
-            m.post(TEST_URL, payload=_call_response(status_code=7))
-
-            with pytest.raises(RutOSAPIError, match="failed with code 7"):
-                await api_client.call("svc", "meth")
+            m.post(_url("/login"), payload=_login_success())
+            m.get(
+                _url("/test"),
+                payload=_error("Token expired", source="Authorization"),
+            )
+            # Need a second login + retry since first 200 with auth error doesn't trigger retry
+            # Actually this is a 200 with success=false and Authorization source
+            with pytest.raises(RutOSAuthError, match="Token expired"):
+                await api_client.get("/test")
 
 
-class TestSessionRetry:
-    """Tests for session expired retry logic."""
+class TestTokenRetry:
+    """Tests for automatic token refresh on 401."""
 
-    async def test_session_expired_retry_success(self, api_client):
-        """Test code 6 triggers re-login and successful retry."""
+    async def test_401_triggers_reauth_and_retry(self, api_client):
+        """Test 401 response triggers re-login and retries the request."""
         with aioresponses() as m:
             # Initial login
-            m.post(TEST_URL, payload=_login_response("session1"))
-            # First call returns expired
-            m.post(TEST_URL, payload={
-                "jsonrpc": "2.0", "id": 1,
-                "result": [JSONRPC_SESSION_EXPIRED],
-            })
+            m.post(_url("/login"), payload=_login_success("token1"))
+            # First request returns 401
+            m.get(_url("/test"), status=401)
             # Re-login
-            m.post(TEST_URL, payload=_login_response("session2"))
+            m.post(_url("/login"), payload=_login_success("token2"))
             # Retry succeeds
-            m.post(TEST_URL, payload=_call_response({"data": "ok"}))
+            m.get(_url("/test"), payload=_success({"retried": True}))
 
-            result = await api_client.call("svc", "meth")
-            assert result == {"data": "ok"}
+            result = await api_client.get("/test")
+            assert result == {"retried": True}
 
-    async def test_session_expired_retry_fails(self, api_client):
-        """Test code 6 → re-login → second failure raises."""
+    async def test_401_twice_raises(self, api_client):
+        """Test double 401 raises RutOSAuthError."""
         with aioresponses() as m:
-            # Initial login
-            m.post(TEST_URL, payload=_login_response("session1"))
-            # First call returns expired
-            m.post(TEST_URL, payload={
-                "jsonrpc": "2.0", "id": 1,
-                "result": [JSONRPC_SESSION_EXPIRED],
-            })
-            # Re-login
-            m.post(TEST_URL, payload=_login_response("session2"))
-            # Retry also fails
-            m.post(TEST_URL, payload=_call_response(status_code=7))
+            m.post(_url("/login"), payload=_login_success("token1"))
+            m.get(_url("/test"), status=401)
+            m.post(_url("/login"), payload=_login_success("token2"))
+            m.get(_url("/test"), status=401)
 
-            with pytest.raises(RutOSAPIError, match="failed with code 7"):
-                await api_client.call("svc", "meth")
+            with pytest.raises(RutOSAuthError, match="Authentication required"):
+                await api_client.get("/test")
 
 
 class TestEnsureSession:
@@ -207,35 +241,33 @@ class TestEnsureSession:
         """Test session is refreshed when within margin of expiry."""
         with aioresponses() as m:
             # First login
-            m.post(TEST_URL, payload=_login_response("session1"))
-
+            m.post(_url("/login"), payload=_login_success("token1"))
             await api_client.login()
-            assert api_client._ubus_session == "session1"
+            assert api_client._token == "token1"
 
             # Simulate near-expiry
-            api_client._session_expiry = time.monotonic() + SESSION_REFRESH_MARGIN - 1
+            api_client._token_expiry = time.monotonic() + SESSION_REFRESH_MARGIN - 1
 
             # Should trigger refresh
-            m.post(TEST_URL, payload=_login_response("session2"))
-            session_id = await api_client._ensure_session()
-            assert session_id == "session2"
+            m.post(_url("/login"), payload=_login_success("token2"))
+            await api_client._ensure_session()
+            assert api_client._token == "token2"
 
     async def test_ensure_session_reuses_valid(self, api_client):
-        """Test no refresh when session is still fresh."""
+        """Test no refresh when token is still fresh."""
         with aioresponses() as m:
-            m.post(TEST_URL, payload=_login_response())
+            m.post(_url("/login"), payload=_login_success())
 
             await api_client.login()
-            # Session should be valid - no additional HTTP calls needed
-            session_id = await api_client._ensure_session()
-            assert session_id == TEST_SESSION_ID
-            # Only 1 request (the login)
-            assert len(m.requests[TEST_URL_KEY]) == 1
+            token_before = api_client._token
+
+            await api_client._ensure_session()
+            assert api_client._token == token_before
 
     async def test_ensure_session_concurrent_callers(self, api_client):
         """Test lock ensures login is called only once for concurrent callers."""
         with aioresponses() as m:
-            m.post(TEST_URL, payload=_login_response())
+            m.post(_url("/login"), payload=_login_success())
 
             results = await asyncio.gather(
                 api_client._ensure_session(),
@@ -243,138 +275,226 @@ class TestEnsureSession:
                 api_client._ensure_session(),
             )
 
-            # All should get the same session
-            assert all(r == TEST_SESSION_ID for r in results)
-            # Login called only once
-            assert len(m.requests[TEST_URL_KEY]) == 1
+            # All concurrent calls share one login
+            assert api_client._token == TEST_TOKEN
 
 
 class TestGetDeviceInfo:
     """Tests for get_device_info."""
 
     async def test_get_device_info_parses_correctly(self, api_client):
-        """Test parsing of mnf_info and board info."""
+        """Test parsing of system device status response."""
+        device_status = {
+            "mnfinfo": {
+                "serial": "1234567890",
+                "mac": "00:1E:42:AA:BB:CC",
+                "name": "RUTX50",
+            },
+            "static": {
+                "fw_version": "RUTX_R_00.07.06.1",
+                "device_name": "RUTX50",
+                "hostname": "Teltonika-RUTX50",
+            },
+        }
         with aioresponses() as m:
-            m.post(TEST_URL, payload=_login_response())
-            # mnf_info response
-            m.post(TEST_URL, payload=_call_response({
-                "stdout": "name=RUTX50\nserial=1234567890\nmac=00:1E:42:AA:BB:CC\n",
-            }))
-            # board info response
-            m.post(TEST_URL, payload=_call_response({
-                "model": "Teltonika RUTX50",
-                "release": {"description": "RUTX_R_00.07.06.1"},
-            }))
+            m.post(_url("/login"), payload=_login_success())
+            m.get(_url("/system/device/status"), payload=_success(device_status))
 
             info = await api_client.get_device_info()
 
-            assert info["name"] == "RUTX50"
             assert info["serial"] == "1234567890"
             assert info["mac"] == "00:1E:42:AA:BB:CC"
+            assert info["name"] == "RUTX50"
             assert info["firmware"] == "RUTX_R_00.07.06.1"
-            assert info["model"] == "Teltonika RUTX50"
+            assert info["model"] == "RUTX50"
+            assert info["hostname"] == "Teltonika-RUTX50"
 
-
-    async def test_get_device_info_falls_back_when_file_exec_denied(self, api_client):
-        """Test that device info falls back to board info when file.exec is denied."""
+    async def test_get_device_info_handles_partial_data(self, api_client):
+        """Test device info with missing sections."""
+        device_status = {
+            "static": {
+                "fw_version": "RUTX_R_00.07.06.1",
+                "device_name": "RUTX50",
+            },
+        }
         with aioresponses() as m:
-            m.post(TEST_URL, payload=_login_response())
-            # mnf_info denied (e.g., ACL restriction on file.exec)
-            m.post(TEST_URL, payload={
-                "jsonrpc": "2.0",
-                "id": 1,
-                "error": {"code": -32002, "message": "Access denied"},
-            })
-            # board info response still works
-            m.post(TEST_URL, payload=_call_response({
-                "model": "Teltonika RUTX50",
-                "release": {"description": "RUTX_R_00.07.06.1"},
-            }))
+            m.post(_url("/login"), payload=_login_success())
+            m.get(_url("/system/device/status"), payload=_success(device_status))
 
             info = await api_client.get_device_info()
 
-            assert info["model"] == "Teltonika RUTX50"
             assert info["firmware"] == "RUTX_R_00.07.06.1"
+            assert info["model"] == "RUTX50"
+            assert "serial" not in info
 
 
 class TestGetWanInterfaces:
     """Tests for get_wan_interfaces."""
 
     async def test_get_wan_interfaces_filters_wan_only(self, api_client):
-        """Test that loopback/LAN interfaces are excluded."""
-        dump = {
-            "interface": [
-                {"interface": "loopback", "up": True, "proto": "static", "uptime": 0, "metric": 0},
-                {"interface": "lan", "up": True, "proto": "static", "uptime": 0, "metric": 0},
-                {"interface": "wan", "up": True, "proto": "dhcp", "uptime": 100, "metric": 10,
-                 "ipv4-address": [{"address": "1.2.3.4"}], "device": "eth0", "l3_device": "eth0",
-                 "route": [{"target": "0.0.0.0", "mask": 0}]},
-                {"interface": "mob1s1a1", "up": False, "proto": "qmi", "uptime": 0, "metric": 20,
-                 "device": "wwan0", "l3_device": "wwan0"},
-            ]
-        }
+        """Test that LAN interfaces are excluded by area_type."""
+        interfaces = [
+            {
+                "id": "lan",
+                "area_type": "lan",
+                "is_up": True,
+                "proto": "static",
+                "uptime": 0,
+                "metric": 0,
+            },
+            {
+                "id": "wan",
+                "area_type": "wan",
+                "is_up": True,
+                "proto": "dhcp",
+                "uptime": 100,
+                "metric": 10,
+                "ipv4-address": [{"address": "1.2.3.4", "mask": 24}],
+                "device": "eth0",
+                "l3_device": "eth0",
+            },
+            {
+                "id": "mob1s1a1",
+                "area_type": "wan",
+                "is_up": False,
+                "proto": "wwan",
+                "uptime": 0,
+                "metric": 20,
+                "device": "wwan0",
+                "l3_device": "wwan0",
+            },
+        ]
         with aioresponses() as m:
-            m.post(TEST_URL, payload=_login_response())
-            m.post(TEST_URL, payload=_call_response(dump))
+            m.post(_url("/login"), payload=_login_success())
+            m.get(_url("/interfaces/status"), payload=_success(interfaces))
 
-            interfaces = await api_client.get_wan_interfaces()
+            result = await api_client.get_wan_interfaces()
 
-            names = [i["name"] for i in interfaces]
-            assert "loopback" not in names
+            names = [i["name"] for i in result]
             assert "lan" not in names
             assert "wan" in names
             assert "mob1s1a1" in names
 
     async def test_get_wan_interfaces_sorted_by_metric(self, api_client):
         """Test interfaces are returned sorted by metric ascending."""
-        dump = {
-            "interface": [
-                {"interface": "mob1s1a1", "up": False, "proto": "qmi", "uptime": 0, "metric": 20,
-                 "device": "wwan0", "l3_device": "wwan0"},
-                {"interface": "wan", "up": True, "proto": "dhcp", "uptime": 100, "metric": 10,
-                 "ipv4-address": [{"address": "1.2.3.4"}], "device": "eth0", "l3_device": "eth0",
-                 "route": [{"target": "0.0.0.0", "mask": 0}]},
-            ]
-        }
+        interfaces = [
+            {
+                "id": "mob1s1a1",
+                "area_type": "wan",
+                "is_up": False,
+                "proto": "wwan",
+                "uptime": 0,
+                "metric": 20,
+                "device": "wwan0",
+                "l3_device": "wwan0",
+            },
+            {
+                "id": "wan",
+                "area_type": "wan",
+                "is_up": True,
+                "proto": "dhcp",
+                "uptime": 100,
+                "metric": 10,
+                "ipv4-address": [{"address": "1.2.3.4", "mask": 24}],
+                "device": "eth0",
+                "l3_device": "eth0",
+            },
+        ]
         with aioresponses() as m:
-            m.post(TEST_URL, payload=_login_response())
-            m.post(TEST_URL, payload=_call_response(dump))
+            m.post(_url("/login"), payload=_login_success())
+            m.get(_url("/interfaces/status"), payload=_success(interfaces))
 
-            interfaces = await api_client.get_wan_interfaces()
+            result = await api_client.get_wan_interfaces()
 
-            assert interfaces[0]["name"] == "wan"
-            assert interfaces[1]["name"] == "mob1s1a1"
-            assert interfaces[0]["metric"] < interfaces[1]["metric"]
+            assert result[0]["name"] == "wan"
+            assert result[1]["name"] == "mob1s1a1"
+            assert result[0]["metric"] < result[1]["metric"]
+
+    async def test_get_wan_interfaces_extracts_ip(self, api_client):
+        """Test IP address is extracted from ipv4-address field."""
+        interfaces = [
+            {
+                "id": "wan",
+                "area_type": "wan",
+                "is_up": True,
+                "proto": "dhcp",
+                "uptime": 3600,
+                "metric": 10,
+                "ipv4-address": [{"address": "192.168.1.100", "mask": 24}],
+                "device": "eth0",
+                "l3_device": "eth0",
+            },
+        ]
+        with aioresponses() as m:
+            m.post(_url("/login"), payload=_login_success())
+            m.get(_url("/interfaces/status"), payload=_success(interfaces))
+
+            result = await api_client.get_wan_interfaces()
+
+            assert result[0]["ip_address"] == "192.168.1.100"
+
+    async def test_get_wan_interfaces_no_ip(self, api_client):
+        """Test IP is None when no ipv4-address."""
+        interfaces = [
+            {
+                "id": "mob1s1a1",
+                "area_type": "wan",
+                "is_up": False,
+                "proto": "wwan",
+                "uptime": 0,
+                "metric": 20,
+            },
+        ]
+        with aioresponses() as m:
+            m.post(_url("/login"), payload=_login_success())
+            m.get(_url("/interfaces/status"), payload=_success(interfaces))
+
+            result = await api_client.get_wan_interfaces()
+
+            assert result[0]["ip_address"] is None
 
 
 class TestGetInternetStatus:
     """Tests for get_internet_status."""
 
-    async def test_get_internet_status_true(self, api_client):
-        """Test returns True when default route is present."""
-        dump = {
-            "interface": [{
-                "interface": "wan", "up": True, "proto": "dhcp",
-                "route": [{"target": "0.0.0.0", "mask": 0}],
-            }]
-        }
+    async def test_get_internet_status_connected(self, api_client):
+        """Test returns True when ipv4_status is connected."""
         with aioresponses() as m:
-            m.post(TEST_URL, payload=_login_response())
-            m.post(TEST_URL, payload=_call_response(dump))
+            m.post(_url("/login"), payload=_login_success())
+            m.get(
+                _url("/internet_connection/status"),
+                payload=_success({
+                    "ipv4_status": "connected",
+                    "ipv6_status": "disconnected",
+                    "dns_status": "connected",
+                }),
+            )
 
             assert await api_client.get_internet_status() is True
 
-    async def test_get_internet_status_false(self, api_client):
-        """Test returns False when no default route."""
-        dump = {
-            "interface": [{
-                "interface": "wan", "up": True, "proto": "dhcp",
-                "route": [{"target": "10.0.0.0", "mask": 8}],
-            }]
-        }
+    async def test_get_internet_status_disconnected(self, api_client):
+        """Test returns False when ipv4_status is disconnected."""
         with aioresponses() as m:
-            m.post(TEST_URL, payload=_login_response())
-            m.post(TEST_URL, payload=_call_response(dump))
+            m.post(_url("/login"), payload=_login_success())
+            m.get(
+                _url("/internet_connection/status"),
+                payload=_success({
+                    "ipv4_status": "disconnected",
+                    "ipv6_status": "disconnected",
+                    "dns_status": "disconnected",
+                }),
+            )
+
+            assert await api_client.get_internet_status() is False
+
+    async def test_get_internet_status_error_returns_false(self, api_client):
+        """Test returns False on API error."""
+        with aioresponses() as m:
+            m.post(_url("/login"), payload=_login_success())
+            m.get(
+                _url("/internet_connection/status"),
+                payload=_error("Service unavailable"),
+            )
 
             assert await api_client.get_internet_status() is False
 
@@ -382,63 +502,59 @@ class TestGetInternetStatus:
 class TestSetInterfaceEnabled:
     """Tests for set_interface_enabled."""
 
-    async def test_set_interface_enabled_up(self, api_client):
-        """Test enabling calls network.interface up."""
+    async def test_enable_interface(self, api_client):
+        """Test enabling sends PUT with enabled=1."""
         with aioresponses() as m:
-            m.post(TEST_URL, payload=_login_response())
-            m.post(TEST_URL, payload=_call_response())
+            m.post(_url("/login"), payload=_login_success())
+            m.put(_url("/interfaces/config/wan"), payload=_success())
 
             await api_client.set_interface_enabled("wan", True)
 
-            requests = m.requests[TEST_URL_KEY]
-            body = requests[1].kwargs["json"]
-            assert body["params"][1] == "network.interface"
-            assert body["params"][2] == "up"
+            # Verify the PUT request body
+            for key, requests in m.requests.items():
+                if key[0] == "PUT":
+                    body = requests[0].kwargs["json"]
+                    assert body == {"data": {"enabled": "1"}}
 
-    async def test_set_interface_enabled_down(self, api_client):
-        """Test disabling calls network.interface down."""
+    async def test_disable_interface(self, api_client):
+        """Test disabling sends PUT with enabled=0."""
         with aioresponses() as m:
-            m.post(TEST_URL, payload=_login_response())
-            m.post(TEST_URL, payload=_call_response())
+            m.post(_url("/login"), payload=_login_success())
+            m.put(_url("/interfaces/config/mob1s1a1"), payload=_success())
 
-            await api_client.set_interface_enabled("wan", False)
+            await api_client.set_interface_enabled("mob1s1a1", False)
 
-            requests = m.requests[TEST_URL_KEY]
-            body = requests[1].kwargs["json"]
-            assert body["params"][2] == "down"
+            for key, requests in m.requests.items():
+                if key[0] == "PUT":
+                    body = requests[0].kwargs["json"]
+                    assert body == {"data": {"enabled": "0"}}
 
 
 class TestSetFailoverOrder:
     """Tests for set_failover_order."""
 
     async def test_set_failover_order(self, api_client):
-        """Test sets UCI metrics, commits, and reloads network."""
+        """Test sets metrics via individual PUT calls."""
         with aioresponses() as m:
-            m.post(TEST_URL, payload=_login_response())
-            # uci set for wan (metric=10)
-            m.post(TEST_URL, payload=_call_response())
-            # uci set for mob1s1a1 (metric=20)
-            m.post(TEST_URL, payload=_call_response())
-            # uci commit
-            m.post(TEST_URL, payload=_call_response())
-            # network reload
-            m.post(TEST_URL, payload=_call_response())
+            m.post(_url("/login"), payload=_login_success())
+            m.put(_url("/interfaces/config/wan"), payload=_success())
+            m.put(_url("/interfaces/config/mob1s1a1"), payload=_success())
 
             await api_client.set_failover_order(["wan", "mob1s1a1"])
 
-            requests = m.requests[TEST_URL_KEY]
-            # Should have 5 total requests (login + 2 sets + commit + reload)
-            assert len(requests) == 5
+            # Verify PUT calls
+            put_requests = []
+            for key, requests in m.requests.items():
+                if key[0] == "PUT":
+                    for req in requests:
+                        put_requests.append((str(key[1]), req.kwargs["json"]))
 
-            # Verify UCI set calls
-            uci_set_1 = requests[1].kwargs["json"]
-            assert uci_set_1["params"][1] == "uci"
-            assert uci_set_1["params"][2] == "set"
-            assert uci_set_1["params"][3]["values"]["metric"] == "10"
+            assert len(put_requests) == 2
 
-            uci_set_2 = requests[2].kwargs["json"]
-            assert uci_set_2["params"][3]["values"]["metric"] == "20"
+            # First interface gets metric 10
+            wan_put = next(p for p in put_requests if "wan" in p[0] and "mob" not in p[0])
+            assert wan_put[1] == {"data": {"metric": "10"}}
 
-            # Verify commit
-            commit = requests[3].kwargs["json"]
-            assert commit["params"][2] == "commit"
+            # Second interface gets metric 20
+            mob_put = next(p for p in put_requests if "mob1s1a1" in p[0])
+            assert mob_put[1] == {"data": {"metric": "20"}}

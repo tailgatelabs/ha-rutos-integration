@@ -1,4 +1,4 @@
-"""JSON-RPC 2.0 API client for Teltonika RutOS devices."""
+"""REST API client for Teltonika RutOS devices (Vuci API v1.13+)."""
 
 from __future__ import annotations
 
@@ -9,16 +9,9 @@ from typing import Any
 
 import aiohttp
 
-from .const import (
-    API_JSONRPC_VERSION,
-    API_PATH,
-    SESSION_EXPIRY,
-    SESSION_REFRESH_MARGIN,
-)
+from .const import API_PATH, SESSION_REFRESH_MARGIN
 
 _LOGGER = logging.getLogger(__name__)
-
-JSONRPC_SESSION_EXPIRED = 6
 
 
 class RutOSAPIError(Exception):
@@ -34,7 +27,7 @@ class RutOSConnectionError(RutOSAPIError):
 
 
 class RutOSAPI:
-    """Async JSON-RPC 2.0 client for RutOS ubus API."""
+    """Async REST client for Teltonika RutOS Vuci API."""
 
     def __init__(
         self,
@@ -48,167 +41,182 @@ class RutOSAPI:
         self._username = username
         self._password = password
         self._session = session
-        self._url = f"https://{host}{API_PATH}"
-        self._ubus_session: str | None = None
-        self._session_expiry: float = 0
-        self._rpc_id = 0
+        self._base_url = f"https://{host}{API_PATH}"
+        self._token: str | None = None
+        self._token_expiry: float = 0
         self._lock = asyncio.Lock()
 
-    def _next_id(self) -> int:
-        """Return the next JSON-RPC request ID."""
-        self._rpc_id += 1
-        return self._rpc_id
+    def _url(self, path: str) -> str:
+        """Build a full URL for the given API path."""
+        return f"{self._base_url}{path}"
 
-    async def _request(self, method: str, params: list[Any]) -> Any:
-        """Send a JSON-RPC 2.0 request."""
-        payload = {
-            "jsonrpc": API_JSONRPC_VERSION,
-            "id": self._next_id(),
-            "method": method,
-            "params": params,
-        }
+    def _auth_headers(self) -> dict[str, str]:
+        """Return headers with Bearer token for authenticated requests."""
+        headers: dict[str, str] = {}
+        if self._token:
+            headers["Authorization"] = f"Bearer {self._token}"
+        return headers
+
+    async def _request(
+        self,
+        method: str,
+        path: str,
+        json_data: dict | None = None,
+    ) -> Any:
+        """Send an authenticated HTTP request, retrying once on 401."""
+        url = self._url(path)
+        for attempt in range(2):
+            await self._ensure_session()
+            headers = self._auth_headers()
+            try:
+                async with self._session.request(
+                    method, url, json=json_data, headers=headers, ssl=False,
+                ) as resp:
+                    status = resp.status
+                    try:
+                        data = await resp.json(content_type=None)
+                    except (ValueError, aiohttp.ContentTypeError):
+                        data = None
+            except aiohttp.ClientConnectionError as err:
+                raise RutOSConnectionError(
+                    f"Cannot connect to {self._host}: {err}"
+                ) from err
+            except aiohttp.ClientError as err:
+                raise RutOSAPIError(f"API request failed: {err}") from err
+
+            # Retry once on 401 with a fresh token
+            if status == 401 and attempt == 0:
+                _LOGGER.debug("Got 401, re-authenticating")
+                self._token = None
+                continue
+
+            if status == 401:
+                raise RutOSAuthError("Authentication required or token expired")
+
+            if status >= 400:
+                raise RutOSAPIError(f"HTTP {status} from {path}")
+
+            if not isinstance(data, dict):
+                raise RutOSAPIError(f"Unexpected response format from {path}")
+
+            if not data.get("success", False):
+                errors = data.get("errors", [])
+                msg = (
+                    errors[0].get("error", "Unknown error")
+                    if errors
+                    else "Request failed"
+                )
+                if any(e.get("source") == "Authorization" for e in errors):
+                    raise RutOSAuthError(msg)
+                raise RutOSAPIError(msg)
+
+            return data.get("data", {})
+
+        # Should not be reachable, but satisfy type checker
+        raise RutOSAPIError("Request failed after retry")  # pragma: no cover
+
+    async def login(self) -> None:
+        """Authenticate and obtain a Bearer token."""
+        url = self._url("/login")
+        payload = {"username": self._username, "password": self._password}
         try:
             async with self._session.post(
-                self._url, json=payload, ssl=False
+                url, json=payload, ssl=False,
             ) as resp:
-                resp.raise_for_status()
-                data = await resp.json()
+                status = resp.status
+                try:
+                    data = await resp.json(content_type=None)
+                except (ValueError, aiohttp.ContentTypeError):
+                    data = None
         except aiohttp.ClientConnectionError as err:
             raise RutOSConnectionError(
                 f"Cannot connect to {self._host}: {err}"
             ) from err
         except aiohttp.ClientError as err:
-            raise RutOSAPIError(f"API request failed: {err}") from err
+            raise RutOSAPIError(f"Login request failed: {err}") from err
 
-        if "error" in data:
-            raise RutOSAPIError(f"JSON-RPC error: {data['error']}")
+        if not isinstance(data, dict) or not data.get("success", False):
+            errors = data.get("errors", []) if isinstance(data, dict) else []
+            msg = (
+                errors[0].get("error", "Login failed")
+                if errors
+                else "Login failed"
+            )
+            raise RutOSAuthError(msg)
 
-        return data.get("result")
+        token_data = data.get("data", {})
+        token = token_data.get("token")
+        if not token:
+            raise RutOSAuthError("No token in login response")
 
-    async def login(self) -> None:
-        """Authenticate and obtain a ubus session."""
-        result = await self._request(
-            "call",
-            [
-                "00000000000000000000000000000000",
-                "session",
-                "login",
-                {"username": self._username, "password": self._password},
-            ],
-        )
-        # Result is [status_code, {ubus_rpc_session: "...", ...}]
-        if not isinstance(result, list) or len(result) < 2:
-            raise RutOSAuthError("Unexpected login response format")
+        self._token = token
+        expires = token_data.get("expires", 300)
+        self._token_expiry = time.monotonic() + expires
+        _LOGGER.debug("Authenticated to %s (expires in %ds)", self._host, expires)
 
-        status_code = result[0]
-        if status_code != 0:
-            raise RutOSAuthError(f"Login failed with status code {status_code}")
-
-        session_data = result[1]
-        ubus_session = session_data.get("ubus_rpc_session")
-        if not ubus_session:
-            raise RutOSAuthError("No session ID in login response")
-
-        self._ubus_session = ubus_session
-        self._session_expiry = time.monotonic() + SESSION_EXPIRY
-        _LOGGER.debug("Authenticated to %s", self._host)
-
-    async def _ensure_session(self) -> str:
-        """Ensure we have a valid session, refreshing if needed."""
+    async def _ensure_session(self) -> None:
+        """Ensure we have a valid token, refreshing if needed."""
         async with self._lock:
             if (
-                self._ubus_session is None
-                or time.monotonic() > self._session_expiry - SESSION_REFRESH_MARGIN
+                self._token is None
+                or time.monotonic() > self._token_expiry - SESSION_REFRESH_MARGIN
             ):
                 await self.login()
-            return self._ubus_session  # type: ignore[return-value]
 
-    async def call(
-        self, service: str, method: str, params: dict[str, Any] | None = None
-    ) -> Any:
-        """Make an authenticated ubus call."""
-        session_id = await self._ensure_session()
-        result = await self._request(
-            "call",
-            [session_id, service, method, params or {}],
-        )
+    async def get(self, path: str) -> Any:
+        """Make an authenticated GET request."""
+        return await self._request("GET", path)
 
-        # Handle expired session (code 6) — retry once
-        if isinstance(result, list) and len(result) >= 1 and result[0] == JSONRPC_SESSION_EXPIRED:
-            _LOGGER.debug("Session expired, re-authenticating")
-            self._ubus_session = None
-            session_id = await self._ensure_session()
-            result = await self._request(
-                "call",
-                [session_id, service, method, params or {}],
-            )
+    async def put(self, path: str, data: dict[str, Any]) -> Any:
+        """Make an authenticated PUT request."""
+        return await self._request("PUT", path, json_data=data)
 
-        if isinstance(result, list) and len(result) >= 1 and result[0] != 0:
-            raise RutOSAPIError(
-                f"ubus call {service}.{method} failed with code {result[0]}"
-            )
-
-        # Return the data payload (second element) if present
-        if isinstance(result, list) and len(result) >= 2:
-            return result[1]
-        return result
+    async def post(self, path: str, data: dict[str, Any] | None = None) -> Any:
+        """Make an authenticated POST request."""
+        return await self._request("POST", path, json_data=data)
 
     async def get_device_info(self) -> dict[str, Any]:
         """Fetch device information (model, serial, MAC, firmware)."""
+        data = await self.get("/system/device/status")
+
         info: dict[str, Any] = {}
 
-        # Try mnf_info first (requires file.exec ACL permission)
-        try:
-            mnf_info = await self.call("file", "exec", {
-                "command": "mnf_info",
-                "params": ["--name", "--serial", "--mac", "--batch"],
-            })
-            # mnf_info returns stdout with key=value lines
-            stdout = mnf_info.get("stdout", "") if isinstance(mnf_info, dict) else ""
-            for line in stdout.strip().split("\n"):
-                if "=" in line:
-                    key, _, value = line.partition("=")
-                    info[key.strip()] = value.strip()
-        except RutOSAPIError:
-            _LOGGER.debug("Could not fetch mnf_info (file.exec may not be permitted)")
+        mnfinfo = data.get("mnfinfo", {})
+        if mnfinfo:
+            info["serial"] = mnfinfo.get("serial", "")
+            info["mac"] = mnfinfo.get("mac", "")
+            info["name"] = mnfinfo.get("name", "")
 
-        # Also get firmware version and model from system.board
-        try:
-            board = await self.call("system", "board")
-            if isinstance(board, dict):
-                info["firmware"] = board.get("release", {}).get("description", "")
-                info["model"] = board.get("model", info.get("name", ""))
-        except RutOSAPIError:
-            _LOGGER.debug("Could not fetch board info")
+        static = data.get("static", {})
+        if static:
+            info["firmware"] = static.get("fw_version", "")
+            info["model"] = (
+                static.get("device_name", "") or static.get("model", "")
+            )
+            info["hostname"] = static.get("hostname", "")
 
         return info
 
     async def get_wan_interfaces(self) -> list[dict[str, Any]]:
         """Fetch all WAN interface statuses."""
-        dump = await self.call("network.interface", "dump")
+        data = await self.get("/interfaces/status")
         interfaces: list[dict[str, Any]] = []
 
-        if not isinstance(dump, dict):
+        if not isinstance(data, list):
             return interfaces
 
-        for iface in dump.get("interface", []):
-            # Filter to WAN-type interfaces (those with a gateway or
-            # explicitly tagged as WAN in their config)
-            is_wan = (
-                iface.get("route")
-                or iface.get("interface", "").startswith("wan")
-                or iface.get("proto") in ("dhcp", "pppoe", "qmi", "mbim", "ncm", "wwan")
-            )
-            if not is_wan:
+        for iface in data:
+            if iface.get("area_type") != "wan":
                 continue
 
             ipv4_addrs = iface.get("ipv4-address", [])
             ip_addr = ipv4_addrs[0].get("address") if ipv4_addrs else None
 
             interfaces.append({
-                "name": iface.get("interface", ""),
-                "enabled": iface.get("up", False),
-                "status": "up" if iface.get("up") else "down",
+                "id": iface.get("id", ""),
+                "name": iface.get("id", ""),
+                "enabled": iface.get("is_up", False),
+                "status": "up" if iface.get("is_up") else "down",
                 "ip_address": ip_addr,
                 "proto": iface.get("proto", ""),
                 "uptime": iface.get("uptime", 0),
@@ -217,48 +225,32 @@ class RutOSAPI:
                 "l3_device": iface.get("l3_device", ""),
             })
 
-        # Sort by metric (failover priority)
         interfaces.sort(key=lambda x: x.get("metric", 0))
         return interfaces
 
     async def get_internet_status(self) -> bool:
         """Check if the router has internet connectivity."""
         try:
-            result = await self.call("network.interface", "dump")
-            if not isinstance(result, dict):
-                return False
-            # Check if any WAN interface has a default route and is up
-            for iface in result.get("interface", []):
-                if iface.get("up") and iface.get("route"):
-                    for route in iface["route"]:
-                        if route.get("target") == "0.0.0.0" and route.get("mask") == 0:
-                            return True
-            return False
+            data = await self.get("/internet_connection/status")
+            ipv4 = str(data.get("ipv4_status", "")).lower()
+            return ipv4 in ("connected", "online", "up")
         except RutOSAPIError:
             return False
 
     async def set_interface_enabled(
         self, interface: str, enabled: bool
     ) -> None:
-        """Enable or disable a WAN interface."""
-        if enabled:
-            await self.call("network.interface", "up", {"interface": interface})
-        else:
-            await self.call("network.interface", "down", {"interface": interface})
+        """Enable or disable a network interface."""
+        await self.put(
+            f"/interfaces/config/{interface}",
+            {"data": {"enabled": "1" if enabled else "0"}},
+        )
 
     async def set_failover_order(self, interfaces: list[str]) -> None:
-        """Set the failover order by updating interface metrics via UCI."""
-        for idx, iface_name in enumerate(interfaces):
+        """Set the failover order by updating interface metrics."""
+        for idx, iface_id in enumerate(interfaces):
             metric = (idx + 1) * 10
-            await self.call("uci", "set", {
-                "config": "network",
-                "section": iface_name,
-                "values": {"metric": str(metric)},
-            })
-
-        await self.call("uci", "commit", {"config": "network"})
-        # Reload network to apply changes
-        await self.call("file", "exec", {
-            "command": "/etc/init.d/network",
-            "params": ["reload"],
-        })
+            await self.put(
+                f"/interfaces/config/{iface_id}",
+                {"data": {"metric": str(metric)}},
+            )

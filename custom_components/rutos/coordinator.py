@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
 from datetime import timedelta
 import logging
@@ -52,13 +53,15 @@ class RutOSDataUpdateCoordinator(DataUpdateCoordinator[RutOSData]):
         self.data.device_info = device_info
 
     async def _async_update_data(self) -> RutOSData:
-        """Fetch WAN interface data and internet status."""
+        """Fetch WAN interface data and internet status in parallel."""
         if self.data is None:
             self.data = RutOSData()
 
         try:
-            wan_interfaces = await self.api.get_wan_interfaces()
-            internet_available = await self.api.get_internet_status()
+            wan_interfaces, internet_available = await asyncio.gather(
+                self.api.get_wan_interfaces(),
+                self.api.get_internet_status(),
+            )
         except RutOSAuthError as err:
             raise UpdateFailed(f"Authentication failed: {err}") from err
         except RutOSAPIError as err:

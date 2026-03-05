@@ -28,10 +28,12 @@ TEST_TOKEN = "test-token-abc123"
 @pytest.fixture
 async def api_client():
     """Create a real RutOSAPI with a real aiohttp session."""
-    session = aiohttp.ClientSession()
+    connector = aiohttp.TCPConnector(enable_cleanup_closed=False)
+    session = aiohttp.ClientSession(connector=connector)
     api = RutOSAPI(TEST_HOST, TEST_USER, TEST_PASS, session)
     yield api
     await session.close()
+    await asyncio.sleep(0)
 
 
 def _url(path: str) -> str:

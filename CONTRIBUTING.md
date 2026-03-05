@@ -2,7 +2,8 @@
 
 ## Branch Strategy
 
-- **`main`** — Stable, release-ready code. Every commit on `main` should be installable via HACS without issues.
+- **`main`** — Stable, release-ready code. Every commit on `main` should be
+  installable via HACS without issues.
 - **`dev`** — Active development branch. All new work happens here first.
 
 ## Workflow
@@ -17,12 +18,16 @@
 
 2. Make your changes and commit.
 3. Open a pull request targeting `dev`.
-4. Once reviewed and merged into `dev`, changes are tested there before being promoted.
-5. When `dev` is stable and ready for release, a PR is opened from `dev` → `main` and tagged with a version.
+4. Once reviewed and merged into `dev`, changes are tested there before being
+   promoted.
+5. When `dev` is stable and ready for release, a PR is opened from `dev` →
+   `main` and tagged with a version.
 
 ## Releases
 
-Releases are created from `main` using GitHub Releases. Each release gets a git tag matching the version in `manifest.json` (e.g., `v0.1.0`). HACS picks up new releases automatically.
+Releases are created from `main` using GitHub Releases. Each release gets a git
+tag matching the version in `manifest.json` (e.g., `v0.1.0`). HACS picks up new
+releases automatically.
 
 To cut a release:
 
@@ -32,11 +37,13 @@ To cut a release:
 
 ## Testing a Branch on Your Home Assistant Install
 
-You can point your HA instance at any branch or PR to test changes before they're released.
+You can point your HA instance at any branch or PR to test changes before
+they're released.
 
 ### Option 1: HACS Custom Repository (easiest)
 
-If you've already added this repo as a HACS custom repository, HACS installs from the latest release on `main` by default. To test a different branch:
+If you've already added this repo as a HACS custom repository, HACS installs
+from the latest release on `main` by default. To test a different branch:
 
 1. SSH into your HA instance or use the Terminal add-on.
 2. Navigate to the integration directory:
@@ -76,7 +83,8 @@ If you've already added this repo as a HACS custom repository, HACS installs fro
    git checkout dev  # or any branch/PR
    ```
 
-2. Copy the integration to your HA config directory (via scp, Samba share, etc.):
+2. Copy the integration to your HA config directory (via scp, Samba share,
+   etc.):
 
    ```bash
    scp -r custom_components/rutos user@homeassistant:/config/custom_components/

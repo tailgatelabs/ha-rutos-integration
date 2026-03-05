@@ -3,7 +3,9 @@
 [![HACS Validation](https://github.com/tailgatelabs/ha-rutos-integration/actions/workflows/validate.yml/badge.svg)](https://github.com/tailgatelabs/ha-rutos-integration/actions/workflows/validate.yml)
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
 
-A Home Assistant custom integration for Teltonika devices running RutOS. Provides WAN interface management, internet connectivity monitoring, and failover control.
+A Home Assistant custom integration for Teltonika devices running RutOS.
+Provides WAN interface management, internet connectivity monitoring, and
+failover control.
 
 ## Supported Devices
 
@@ -12,11 +14,14 @@ A Home Assistant custom integration for Teltonika devices running RutOS. Provide
 
 ## Features
 
-- **WAN Interface Sensors** — Status, IP address, protocol, and uptime for each WAN interface
+- **WAN Interface Sensors** — Status, IP address, protocol, and uptime for each
+  WAN interface
 - **Active WAN Sensor** — Shows which WAN interface is currently active
-- **Internet Connectivity** — Binary sensor reflecting the router's own connectivity check
+- **Internet Connectivity** — Binary sensor reflecting the router's own
+  connectivity check
 - **WAN Interface Switches** — Enable/disable individual WAN interfaces
-- **Failover Ordering** — Service call to reorder WAN interface failover priority
+- **Failover Ordering** — Service call to reorder WAN interface failover
+  priority
 
 ## Installation
 
@@ -24,13 +29,15 @@ A Home Assistant custom integration for Teltonika devices running RutOS. Provide
 
 1. Open HACS in Home Assistant
 2. Go to **Integrations** > **Custom repositories**
-3. Add `https://github.com/tailgatelabs/ha-rutos-integration` as an **Integration**
+3. Add `https://github.com/tailgatelabs/ha-rutos-integration` as an
+   **Integration**
 4. Search for "RutOS" and install it
 5. Restart Home Assistant
 
 ### Manual
 
-1. Copy the `custom_components/rutos` directory to your Home Assistant `config/custom_components/` directory
+1. Copy the `custom_components/rutos` directory to your Home Assistant
+   `config/custom_components/` directory
 2. Restart Home Assistant
 
 ## Configuration

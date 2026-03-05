@@ -10,10 +10,9 @@ from homeassistant.components.sensor import SensorEntity, SensorEntityDescriptio
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN
-from .coordinator import RutOSData, RutOSDataUpdateCoordinator
+from .coordinator import RutOSDataUpdateCoordinator
+from .entity import RutOSEntity
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -55,26 +54,17 @@ async def async_setup_entry(
 ) -> None:
     """Set up RutOS sensors based on a config entry."""
     coordinator: RutOSDataUpdateCoordinator = entry.runtime_data
-
-    entities: list[RutOSSensorEntity | RutOSActiveWANSensor] = []
-
-    for iface in coordinator.data.wan_interfaces:
-        iface_name = iface["name"]
-        for description in INTERFACE_SENSORS:
-            entities.append(
-                RutOSSensorEntity(coordinator, description, iface_name)
-            )
-
-    entities.append(RutOSActiveWANSensor(coordinator))
-
-    async_add_entities(entities)
+    async_add_entities([
+        RutOSSensorEntity(coordinator, description, iface["name"])
+        for iface in coordinator.data.wan_interfaces
+        for description in INTERFACE_SENSORS
+    ] + [RutOSActiveWANSensor(coordinator)])
 
 
-class RutOSSensorEntity(CoordinatorEntity[RutOSDataUpdateCoordinator], SensorEntity):
+class RutOSSensorEntity(RutOSEntity, SensorEntity):
     """Representation of a RutOS WAN interface sensor."""
 
     entity_description: RutOSSensorEntityDescription
-    _attr_has_entity_name = True
 
     def __init__(
         self,
@@ -92,31 +82,17 @@ class RutOSSensorEntity(CoordinatorEntity[RutOSDataUpdateCoordinator], SensorEnt
         self._attr_translation_placeholders = {"interface": interface_name}
 
     @property
-    def device_info(self) -> dict[str, Any]:
-        """Return device info."""
-        info = self.coordinator.data.device_info
-        serial = info.get("serial", "")
-        return {
-            "identifiers": {(DOMAIN, serial)},
-            "name": info.get("model", "RutOS Device"),
-            "manufacturer": "Teltonika",
-            "model": info.get("name", ""),
-            "sw_version": info.get("firmware", ""),
-        }
-
-    @property
     def native_value(self) -> str | int | None:
         """Return the sensor value."""
-        for iface in self.coordinator.data.wan_interfaces:
-            if iface["name"] == self._interface_name:
-                return self.entity_description.value_fn(iface)
-        return None
+        iface = self._find_interface(self._interface_name)
+        if iface is None:
+            return None
+        return self.entity_description.value_fn(iface)
 
 
-class RutOSActiveWANSensor(CoordinatorEntity[RutOSDataUpdateCoordinator], SensorEntity):
+class RutOSActiveWANSensor(RutOSEntity, SensorEntity):
     """Sensor showing the currently active WAN interface."""
 
-    _attr_has_entity_name = True
     _attr_translation_key = "active_wan"
 
     def __init__(self, coordinator: RutOSDataUpdateCoordinator) -> None:
@@ -125,19 +101,6 @@ class RutOSActiveWANSensor(CoordinatorEntity[RutOSDataUpdateCoordinator], Sensor
         self._attr_unique_id = (
             f"{coordinator.data.device_info.get('serial', '')}_active_wan"
         )
-
-    @property
-    def device_info(self) -> dict[str, Any]:
-        """Return device info."""
-        info = self.coordinator.data.device_info
-        serial = info.get("serial", "")
-        return {
-            "identifiers": {(DOMAIN, serial)},
-            "name": info.get("model", "RutOS Device"),
-            "manufacturer": "Teltonika",
-            "model": info.get("name", ""),
-            "sw_version": info.get("firmware", ""),
-        }
 
     @property
     def native_value(self) -> str | None:

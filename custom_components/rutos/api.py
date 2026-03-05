@@ -52,10 +52,9 @@ class RutOSAPI:
 
     def _auth_headers(self) -> dict[str, str]:
         """Return headers with Bearer token for authenticated requests."""
-        headers: dict[str, str] = {}
         if self._token:
-            headers["Authorization"] = f"Bearer {self._token}"
-        return headers
+            return {"Authorization": f"Bearer {self._token}"}
+        return {}
 
     async def _request(
         self,
@@ -213,7 +212,6 @@ class RutOSAPI:
             ip_addr = ipv4_addrs[0].get("address") if ipv4_addrs else None
 
             interfaces.append({
-                "id": iface.get("id", ""),
                 "name": iface.get("id", ""),
                 "enabled": iface.get("is_up", False),
                 "status": "up" if iface.get("is_up") else "down",

@@ -33,7 +33,7 @@ async def api_client():
     api = RutOSAPI(TEST_HOST, TEST_USER, TEST_PASS, session)
     yield api
     await session.close()
-    await asyncio.sleep(0)
+    await asyncio.sleep(0.25)  # Allow connector cleanup thread to stop
 
 
 def _url(path: str) -> str:
@@ -560,3 +560,109 @@ class TestSetFailoverOrder:
             # Second interface gets metric 20
             mob_put = next(p for p in put_requests if "mob1s1a1" in p[0])
             assert mob_put[1] == {"data": {"metric": "20"}}
+
+
+class TestPostMethod:
+    """Tests for the post() convenience method."""
+
+    async def test_post_request_success(self, api_client):
+        """Test successful POST request returns data."""
+        with aioresponses() as m:
+            m.post(_url("/login"), payload=_login_success())
+            m.post(_url("/some/endpoint"), payload=_success({"created": True}))
+
+            result = await api_client.post("/some/endpoint", {"key": "val"})
+
+            assert result == {"created": True}
+
+    async def test_post_request_no_body(self, api_client):
+        """Test POST request with no body passes None as json."""
+        with aioresponses() as m:
+            m.post(_url("/login"), payload=_login_success())
+            m.post(_url("/some/endpoint"), payload=_success())
+
+            result = await api_client.post("/some/endpoint")
+
+            assert result == {}
+
+
+class TestRequestEdgeCases:
+    """Tests for edge cases in _request."""
+
+    async def test_non_dict_response_raises_api_error(self, api_client):
+        """Test that a non-dict JSON response raises RutOSAPIError."""
+        with aioresponses() as m:
+            m.post(_url("/login"), payload=_login_success())
+            # Return a JSON list instead of a dict
+            m.get(_url("/test"), payload=[1, 2, 3])
+
+            with pytest.raises(RutOSAPIError, match="Unexpected response format"):
+                await api_client.get("/test")
+
+    async def test_login_client_error_raises_api_error(self, api_client):
+        """Test generic aiohttp.ClientError during login raises RutOSAPIError."""
+        with aioresponses() as m:
+            m.post(_url("/login"), exception=aiohttp.ClientError("generic error"))
+
+            with pytest.raises(RutOSAPIError, match="Login request failed"):
+                await api_client.login()
+
+    async def test_request_client_error_raises_api_error(self, api_client):
+        """Test generic aiohttp.ClientError during request raises RutOSAPIError."""
+        with aioresponses() as m:
+            m.post(_url("/login"), payload=_login_success())
+            m.get(_url("/test"), exception=aiohttp.ClientError("generic error"))
+
+            with pytest.raises(RutOSAPIError, match="API request failed"):
+                await api_client.get("/test")
+
+    async def test_auth_headers_empty_when_no_token(self, api_client):
+        """Test _auth_headers returns empty dict when no token is set."""
+        assert api_client._token is None
+        assert api_client._auth_headers() == {}
+
+    async def test_auth_headers_bearer_when_token_set(self, api_client):
+        """Test _auth_headers returns Authorization header when token is set."""
+        api_client._token = "my-token"
+        headers = api_client._auth_headers()
+        assert headers == {"Authorization": "Bearer my-token"}
+
+
+class TestGetWanInterfacesEdgeCases:
+    """Tests for edge cases in get_wan_interfaces."""
+
+    async def test_non_list_response_returns_empty(self, api_client):
+        """Test that a non-list response returns an empty list."""
+        with aioresponses() as m:
+            m.post(_url("/login"), payload=_login_success())
+            m.get(_url("/interfaces/status"), payload=_success({"unexpected": "dict"}))
+
+            result = await api_client.get_wan_interfaces()
+
+            assert result == []
+
+
+class TestGetInternetStatusVariants:
+    """Tests for additional internet status values."""
+
+    async def test_get_internet_status_online(self, api_client):
+        """Test returns True when ipv4_status is 'online'."""
+        with aioresponses() as m:
+            m.post(_url("/login"), payload=_login_success())
+            m.get(
+                _url("/internet_connection/status"),
+                payload=_success({"ipv4_status": "online"}),
+            )
+
+            assert await api_client.get_internet_status() is True
+
+    async def test_get_internet_status_up(self, api_client):
+        """Test returns True when ipv4_status is 'up'."""
+        with aioresponses() as m:
+            m.post(_url("/login"), payload=_login_success())
+            m.get(
+                _url("/internet_connection/status"),
+                payload=_success({"ipv4_status": "up"}),
+            )
+
+            assert await api_client.get_internet_status() is True

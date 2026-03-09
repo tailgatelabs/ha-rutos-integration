@@ -159,3 +159,25 @@ async def test_set_failover_order_service_call(
     )
 
     mock_api_instance.set_failover_order.assert_awaited_once_with(["wan", "mob1s1a1"])
+
+
+async def test_register_services_idempotent(
+    hass: HomeAssistant, mock_api_instance: AsyncMock
+):
+    """Test that _register_services is safe to call twice."""
+    from custom_components.rutos import _register_services
+
+    entry = _create_entry(hass)
+
+    with patch(
+        "custom_components.rutos.RutOSAPI", return_value=mock_api_instance
+    ):
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    assert hass.services.has_service(DOMAIN, SERVICE_SET_FAILOVER_ORDER)
+
+    # Calling _register_services again should not raise or duplicate the service
+    _register_services(hass)
+
+    assert hass.services.has_service(DOMAIN, SERVICE_SET_FAILOVER_ORDER)

@@ -86,6 +86,17 @@ class TestRutOSSensorEntity:
         sensor = RutOSSensorEntity(mock_coordinator, desc, "nonexistent")
         assert sensor.native_value is None
 
+    def test_proto_sensor_value(
+        self, mock_coordinator: RutOSDataUpdateCoordinator
+    ):
+        """Test protocol sensor returns the proto field."""
+        desc = INTERFACE_SENSORS[2]  # proto
+        sensor = RutOSSensorEntity(mock_coordinator, desc, "wan")
+        assert sensor.native_value == "dhcp"
+
+        sensor_mob = RutOSSensorEntity(mock_coordinator, desc, "mob1s1a1")
+        assert sensor_mob.native_value == "qmi"
+
 
 class TestRutOSActiveWANSensor:
     """Tests for the active WAN sensor."""

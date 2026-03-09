@@ -70,3 +70,17 @@ class TestRutOSInterfaceSwitch:
 
         with pytest.raises(RutOSAPIError):
             await switch.async_turn_on()
+
+    def test_is_on_returns_false_when_interface_not_found(
+        self, mock_coordinator: RutOSDataUpdateCoordinator
+    ):
+        """Test is_on returns False when interface is not found in data."""
+        switch = RutOSInterfaceSwitch(mock_coordinator, "nonexistent")
+        assert switch.is_on is False
+
+    def test_unique_id_format(
+        self, mock_coordinator: RutOSDataUpdateCoordinator
+    ):
+        """Test unique_id follows {serial}_{interface}_enabled pattern."""
+        switch = RutOSInterfaceSwitch(mock_coordinator, "wan")
+        assert switch.unique_id == "1234567890_wan_enabled"

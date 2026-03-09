@@ -35,6 +35,47 @@ To cut a release:
 2. Update `version` in `custom_components/rutos/manifest.json`.
 3. Create a GitHub Release with the tag (e.g., `v0.2.0`) and release notes.
 
+## Testing Requirements
+
+**All new code must be covered by tests.** This is a hard requirement for any PR
+to be merged.
+
+### Rules
+
+- Every new function, method, branch, and error path must have at least one
+  test.
+- Bug fixes must include a regression test that would have caught the bug.
+- Tests live in `tests/` and mirror the module structure of
+  `custom_components/rutos/` (e.g., `api.py` → `tests/test_api.py`).
+- The project enforces a minimum of **90% code coverage** (line + branch). The
+  CI pipeline will fail if coverage drops below this threshold.
+
+### Running tests locally
+
+```bash
+pip install -r requirements_dev.txt -r requirements_test.txt
+pytest tests/ -v --cov=custom_components/rutos --cov-report=term-missing
+```
+
+The `--cov-report=term-missing` flag prints uncovered lines so you can see
+exactly what still needs a test.
+
+### What to test
+
+| Area                                           | What to cover                                                                                                           |
+| ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `api.py`                                       | Every public method, every exception type raised, every branch (e.g., missing fields, non-list responses, token expiry) |
+| `coordinator.py`                               | Setup, update, both error paths (`RutOSAuthError`, `RutOSAPIError`), and the `data is None` initialisation branches     |
+| `config_flow.py`                               | All error cases (`invalid_auth`, `cannot_connect`, `unknown`), the duplicate-device abort, and the no-serial fallback   |
+| `sensor.py` / `binary_sensor.py` / `switch.py` | Each entity property, unique ID format, and any edge case (missing interface, all-down interfaces, etc.)                |
+| `__init__.py`                                  | Setup success, auth failure, unload, service registration and idempotency                                               |
+
+### Test patterns
+
+Use the shared fixtures in `tests/conftest.py` (`mock_coordinator`, `mock_api`,
+`mock_wan_interfaces`, etc.) rather than duplicating setup logic in individual
+test files. When you need HTTP-level mocking, use `aioresponses`.
+
 ## Testing a Branch on Your Home Assistant Install
 
 You can point your HA instance at any branch or PR to test changes before

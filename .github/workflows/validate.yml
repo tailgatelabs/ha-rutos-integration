@@ -32,4 +32,6 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -r requirements_dev.txt -r requirements_test.txt
-      - run: pytest tests/ -v --cov=custom_components/rutos --cov-report=xml
+      - run:
+          pytest tests/ -v --cov=custom_components/rutos --cov-report=xml
+          --cov-report=term-missing

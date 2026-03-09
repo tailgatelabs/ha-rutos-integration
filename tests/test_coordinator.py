@@ -96,3 +96,32 @@ async def test_update_interval_is_30s(hass: HomeAssistant, mock_api: AsyncMock):
     """Test coordinator uses the configured scan interval."""
     coordinator = RutOSDataUpdateCoordinator(hass, mock_api)
     assert coordinator.update_interval == timedelta(seconds=DEFAULT_SCAN_INTERVAL)
+
+
+async def test_async_setup_initializes_data_when_none(
+    hass: HomeAssistant, mock_api: AsyncMock, mock_device_info: dict
+):
+    """Test _async_setup creates RutOSData when self.data is None."""
+    coordinator = RutOSDataUpdateCoordinator(hass, mock_api)
+    # Leave coordinator.data as None (the default before first refresh)
+    assert coordinator.data is None
+
+    await coordinator._async_setup()
+
+    assert coordinator.data is not None
+    assert coordinator.data.device_info == mock_device_info
+
+
+async def test_async_update_data_initializes_data_when_none(
+    hass: HomeAssistant,
+    mock_api: AsyncMock,
+    mock_wan_interfaces: list[dict],
+):
+    """Test _async_update_data creates RutOSData when self.data is None."""
+    coordinator = RutOSDataUpdateCoordinator(hass, mock_api)
+    assert coordinator.data is None
+
+    result = await coordinator._async_update_data()
+
+    assert isinstance(result, RutOSData)
+    assert result.wan_interfaces == mock_wan_interfaces

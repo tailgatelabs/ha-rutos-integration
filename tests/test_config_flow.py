@@ -143,3 +143,30 @@ async def test_duplicate_device_aborts(hass: HomeAssistant, mock_config_entry):
 
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "already_configured"
+
+
+async def test_no_serial_creates_entry_without_unique_id(hass: HomeAssistant):
+    """Test that missing serial still creates an entry using model as title."""
+    device_info_no_serial = {
+        "name": "RUTX50",
+        "model": "RUTX50",
+        "firmware": "RUTX_R_00.07.06.1",
+    }
+
+    with patch(
+        "custom_components.rutos.config_flow.RutOSAPI"
+    ) as mock_api_cls:
+        mock_api = AsyncMock()
+        mock_api.login.return_value = None
+        mock_api.get_device_info.return_value = device_info_no_serial
+        mock_api_cls.return_value = mock_api
+
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": config_entries.SOURCE_USER}
+        )
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], USER_INPUT
+        )
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["title"] == "RUTX50"

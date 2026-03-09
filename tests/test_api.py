@@ -33,7 +33,7 @@ async def api_client():
     api = RutOSAPI(TEST_HOST, TEST_USER, TEST_PASS, session)
     yield api
     await session.close()
-    await asyncio.sleep(0)
+    await asyncio.sleep(0.25)  # Allow connector cleanup thread to stop
 
 
 def _url(path: str) -> str:

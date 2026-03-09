@@ -25,6 +25,11 @@
             "type": "command",
             "command": ".claude/hooks/lint.sh",
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": ".claude/hooks/typecheck.sh",
+            "timeout": 30
           }
         ]
       },
@@ -40,6 +45,11 @@
             "type": "command",
             "command": ".claude/hooks/lint.sh",
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": ".claude/hooks/typecheck.sh",
+            "timeout": 30
           }
         ]
       }

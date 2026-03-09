@@ -164,28 +164,20 @@ async def test_set_failover_order_service_call(
 async def test_register_services_idempotent(
     hass: HomeAssistant, mock_api_instance: AsyncMock
 ):
-    """Test that setting up two entries only registers the service once."""
-    entry1 = _create_entry(hass)
-    entry2 = MockConfigEntry(
-        domain=DOMAIN,
-        title="RUTX50-2",
-        data={
-            CONF_HOST: "192.168.1.2",
-            CONF_USERNAME: "admin",
-            CONF_PASSWORD: "admin01",
-        },
-        unique_id="9999999999",
-    )
-    entry2.add_to_hass(hass)
+    """Test that _register_services is safe to call twice."""
+    from custom_components.rutos import _register_services
+
+    entry = _create_entry(hass)
 
     with patch(
         "custom_components.rutos.RutOSAPI", return_value=mock_api_instance
     ):
-        await hass.config_entries.async_setup(entry1.entry_id)
-        await hass.async_block_till_done()
-        # Setting up a second entry should not raise even though the service exists
-        await hass.config_entries.async_setup(entry2.entry_id)
+        await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
 
-    # Service is still registered exactly once (no duplicates or errors)
+    assert hass.services.has_service(DOMAIN, SERVICE_SET_FAILOVER_ORDER)
+
+    # Calling _register_services again should not raise or duplicate the service
+    _register_services(hass)
+
     assert hass.services.has_service(DOMAIN, SERVICE_SET_FAILOVER_ORDER)

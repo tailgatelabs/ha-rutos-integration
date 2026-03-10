@@ -24,6 +24,8 @@ failover control.
   priority
 - **GPS Tracking** — Device tracker with real-time location on the HA map, plus
   sensors for speed, altitude, heading, satellites, and fix status
+- **Modem Reboot** — Button to reboot individual modems without rebooting the
+  entire device
 
 ## Installation
 

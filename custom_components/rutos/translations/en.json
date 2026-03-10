@@ -58,6 +58,11 @@
         "name": "GPS location"
       }
     },
+    "button": {
+      "modem_reboot": {
+        "name": "Reboot {modem}"
+      }
+    },
     "binary_sensor": {
       "internet_connectivity": {
         "name": "Internet connectivity"

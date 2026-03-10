@@ -29,6 +29,7 @@ PLATFORMS: list[Platform] = [
     Platform.BINARY_SENSOR,
     Platform.SWITCH,
     Platform.DEVICE_TRACKER,
+    Platform.BUTTON,
 ]
 
 type RutOSConfigEntry = ConfigEntry[RutOSDataUpdateCoordinator]

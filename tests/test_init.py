@@ -71,6 +71,8 @@ def mock_api_instance():
     api.get_wan_interfaces.return_value = MOCK_WAN_INTERFACES
     api.get_internet_status.return_value = True
     api.get_gps_position.return_value = None
+    api.get_data_limit.return_value = []
+    api.get_modem_signal.return_value = []
     api.get_modems.return_value = []
     api.set_failover_order.return_value = None
     return api

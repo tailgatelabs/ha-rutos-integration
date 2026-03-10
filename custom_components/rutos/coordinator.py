@@ -25,6 +25,8 @@ class RutOSData:
     wan_interfaces: list[dict[str, Any]] = field(default_factory=list)
     internet_available: bool = False
     gps_position: dict[str, Any] | None = None
+    data_limit: list[dict[str, Any]] = field(default_factory=list)
+    modem_signal: list[dict[str, Any]] = field(default_factory=list)
     modems: list[dict[str, Any]] = field(default_factory=list)
 
 
@@ -60,11 +62,13 @@ class RutOSDataUpdateCoordinator(DataUpdateCoordinator[RutOSData]):
             self.data = RutOSData()
 
         try:
-            wan_interfaces, internet_available, gps_position, modems = (
+            wan_interfaces, internet_available, gps_position, data_limit, modem_signal, modems = (
                 await asyncio.gather(
                     self.api.get_wan_interfaces(),
                     self.api.get_internet_status(),
                     self.api.get_gps_position(),
+                    self.api.get_data_limit(),
+                    self.api.get_modem_signal(),
                     self.api.get_modems(),
                 )
             )
@@ -76,5 +80,7 @@ class RutOSDataUpdateCoordinator(DataUpdateCoordinator[RutOSData]):
         self.data.wan_interfaces = wan_interfaces
         self.data.internet_available = internet_available
         self.data.gps_position = gps_position
+        self.data.data_limit = data_limit
+        self.data.modem_signal = modem_signal
         self.data.modems = modems
         return self.data

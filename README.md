@@ -24,6 +24,10 @@ failover control.
   priority
 - **GPS Tracking** — Device tracker with real-time location on the HA map, plus
   sensors for speed, altitude, heading, satellites, and fix status
+- **Data Usage** — Data used, data limit, and usage percentage for each
+  configured data limit, plus a button to reset usage counters
+- **Cellular Signal** — RSSI, RSRP, RSRQ, SINR, network type, and band for each
+  modem
 - **Modem Reboot** — Button to reboot individual modems without rebooting the
   entire device
 

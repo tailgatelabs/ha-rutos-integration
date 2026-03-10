@@ -244,6 +244,36 @@ class RutOSAPI:
             {"data": {"enabled": "1" if enabled else "0"}},
         )
 
+    async def get_data_limit(self) -> list[dict[str, Any]]:
+        """Fetch data limit/usage status for all configured limits."""
+        try:
+            data = await self.get("/data_limit/status")
+        except RutOSAPIError:
+            return []
+
+        if not isinstance(data, list):
+            return []
+
+        limits: list[dict[str, Any]] = []
+        for entry in data:
+            if not isinstance(entry, dict):
+                continue
+            limits.append({
+                "id": entry.get("id", ""),
+                "interface": entry.get("interface", ""),
+                "enabled": entry.get("enabled", False),
+                "data_limit": entry.get("data_limit", 0),
+                "data_used": entry.get("data_used", 0),
+                "data_warning_enabled": entry.get("data_warning_enabled", False),
+                "data_warning_limit": entry.get("data_warning_limit", 0),
+                "due_reset_time": entry.get("due_reset_time"),
+            })
+        return limits
+
+    async def clear_data_usage(self) -> None:
+        """Clear/reset data usage counters."""
+        await self.post("/data_limit/actions/clear")
+
     async def reboot_modem(self, modem_id: str) -> None:
         """Reboot a specific modem."""
         await self.post(f"/modems/{modem_id}/actions/reboot")
@@ -263,6 +293,33 @@ class RutOSAPI:
             for modem in data
             if isinstance(modem, dict) and modem.get("id")
         ]
+
+    async def get_modem_signal(self) -> list[dict[str, Any]]:
+        """Fetch signal strength data for all modems."""
+        try:
+            data = await self.get("/modems/signal/status")
+        except RutOSAPIError:
+            return []
+
+        if not isinstance(data, list):
+            return []
+
+        modems: list[dict[str, Any]] = []
+        for modem in data:
+            if not isinstance(modem, dict):
+                continue
+            modem_id = modem.get("id", "")
+            modems.append({
+                "id": modem_id,
+                "rssi": modem.get("rssi"),
+                "rsrp": modem.get("rsrp"),
+                "rsrq": modem.get("rsrq"),
+                "sinr": modem.get("sinr"),
+                "network_type": modem.get("network_type"),
+                "band": modem.get("band"),
+                "channel_number": modem.get("channel_number"),
+            })
+        return modems
 
     async def set_failover_order(self, interfaces: list[str]) -> None:
         """Set the failover order by updating interface metrics."""

@@ -51,6 +51,33 @@
       },
       "gps_fix_status": {
         "name": "GPS fix status"
+      },
+      "data_used": {
+        "name": "{limit} data used"
+      },
+      "data_limit": {
+        "name": "{limit} data limit"
+      },
+      "data_usage_percent": {
+        "name": "{limit} data usage"
+      },
+      "modem_rssi": {
+        "name": "{modem} RSSI"
+      },
+      "modem_rsrp": {
+        "name": "{modem} RSRP"
+      },
+      "modem_rsrq": {
+        "name": "{modem} RSRQ"
+      },
+      "modem_sinr": {
+        "name": "{modem} SINR"
+      },
+      "modem_network_type": {
+        "name": "{modem} network type"
+      },
+      "modem_band": {
+        "name": "{modem} band"
       }
     },
     "device_tracker": {
@@ -59,6 +86,9 @@
       }
     },
     "button": {
+      "clear_data_usage": {
+        "name": "Clear data usage"
+      },
       "modem_reboot": {
         "name": "Reboot {modem}"
       }

@@ -66,11 +66,17 @@ async def test_async_update_data_returns_rutos_data(
     assert result.internet_available is True
     assert result.gps_position is not None
     assert result.gps_position["latitude"] == 37.7749
+    assert len(result.data_limit) == 1
+    assert result.data_limit[0]["id"] == "limit1"
+    assert len(result.modem_signal) == 1
+    assert result.modem_signal[0]["id"] == "modem1"
     assert len(result.modems) == 1
     assert result.modems[0]["id"] == "modem1"
     mock_api.get_wan_interfaces.assert_awaited_once()
     mock_api.get_internet_status.assert_awaited_once()
     mock_api.get_gps_position.assert_awaited_once()
+    mock_api.get_data_limit.assert_awaited_once()
+    mock_api.get_modem_signal.assert_awaited_once()
     mock_api.get_modems.assert_awaited_once()
 
 
@@ -132,4 +138,6 @@ async def test_async_update_data_initializes_data_when_none(
     assert isinstance(result, RutOSData)
     assert result.wan_interfaces == mock_wan_interfaces
     assert result.gps_position is not None
+    assert len(result.data_limit) == 1
+    assert len(result.modem_signal) == 1
     assert len(result.modems) == 1

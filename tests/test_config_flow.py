@@ -41,9 +41,12 @@ async def test_form_shown_on_init(hass: HomeAssistant):
 
 async def test_successful_config_flow(hass: HomeAssistant):
     """Test a complete successful config flow creates an entry."""
-    with patch(
-        "custom_components.rutos.config_flow.RutOSAPI"
-    ) as mock_api_cls:
+    with (
+        patch(
+            "custom_components.rutos.config_flow.RutOSAPI"
+        ) as mock_api_cls,
+        patch("custom_components.rutos.async_setup_entry", return_value=True),
+    ):
         mock_api = AsyncMock()
         mock_api.login.return_value = None
         mock_api.get_device_info.return_value = DEVICE_INFO
@@ -153,9 +156,12 @@ async def test_no_serial_creates_entry_without_unique_id(hass: HomeAssistant):
         "firmware": "RUTX_R_00.07.06.1",
     }
 
-    with patch(
-        "custom_components.rutos.config_flow.RutOSAPI"
-    ) as mock_api_cls:
+    with (
+        patch(
+            "custom_components.rutos.config_flow.RutOSAPI"
+        ) as mock_api_cls,
+        patch("custom_components.rutos.async_setup_entry", return_value=True),
+    ):
         mock_api = AsyncMock()
         mock_api.login.return_value = None
         mock_api.get_device_info.return_value = device_info_no_serial

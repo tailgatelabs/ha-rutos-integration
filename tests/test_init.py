@@ -61,6 +61,16 @@ def _create_entry(hass: HomeAssistant) -> MockConfigEntry:
     return entry
 
 
+@pytest.fixture(autouse=True)
+def _mock_client_session():
+    """Prevent real aiohttp session creation (avoids pycares thread leak)."""
+    with patch(
+        "custom_components.rutos.async_get_clientsession",
+        return_value=AsyncMock(),
+    ):
+        yield
+
+
 @pytest.fixture
 def mock_api_instance():
     """Return a mock API that returns device info and WAN data."""

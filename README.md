@@ -1,6 +1,6 @@
 # RutOS Home Assistant Integration
 
-[![HACS Validation](https://github.com/tailgatelabs/ha-rutos-integration/actions/workflows/validate.yml/badge.svg)](https://github.com/tailgatelabs/ha-rutos-integration/actions/workflows/validate.yml)
+[![Validate](https://github.com/crbn60/ha-rutos-integration/actions/workflows/validate.yml/badge.svg)](https://github.com/crbn60/ha-rutos-integration/actions/workflows/validate.yml)
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
 
 A Home Assistant custom integration for Teltonika devices running RutOS.

@@ -36,6 +36,24 @@
       },
       "active_wan": {
         "name": "Active WAN interface"
+      },
+      "modem_rssi": {
+        "name": "{modem} RSSI"
+      },
+      "modem_rsrp": {
+        "name": "{modem} RSRP"
+      },
+      "modem_rsrq": {
+        "name": "{modem} RSRQ"
+      },
+      "modem_sinr": {
+        "name": "{modem} SINR"
+      },
+      "modem_network_type": {
+        "name": "{modem} network type"
+      },
+      "modem_band": {
+        "name": "{modem} band"
       }
     },
     "binary_sensor": {

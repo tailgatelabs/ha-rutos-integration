@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import time
-from unittest.mock import AsyncMock, patch
-
 import aiohttp
 import pytest
 from aioresponses import aioresponses
@@ -28,10 +26,7 @@ TEST_TOKEN = "test-token-abc123"
 @pytest.fixture
 async def api_client():
     """Create a RutOSAPI with a real aiohttp session."""
-    # Use ThreadedResolver to avoid pycares spawning a persistent daemon thread
-    # (_run_safe_shutdown_loop) that trips the HA test plugin's thread check.
-    connector = aiohttp.TCPConnector(resolver=aiohttp.resolver.ThreadedResolver())
-    session = aiohttp.ClientSession(connector=connector)
+    session = aiohttp.ClientSession()
     api = RutOSAPI(TEST_HOST, TEST_USER, TEST_PASS, session)
     yield api
     await session.close()

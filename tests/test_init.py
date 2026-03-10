@@ -22,6 +22,7 @@ from custom_components.rutos.coordinator import RutOSDataUpdateCoordinator
 
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
+
 MOCK_DEVICE_INFO = {
     "name": "RUTX50",
     "serial": "1234567890",
@@ -59,16 +60,6 @@ def _create_entry(hass: HomeAssistant) -> MockConfigEntry:
     )
     entry.add_to_hass(hass)
     return entry
-
-
-@pytest.fixture(autouse=True)
-def _mock_client_session():
-    """Prevent real aiohttp session creation (avoids pycares thread leak)."""
-    with patch(
-        "custom_components.rutos.async_get_clientsession",
-        return_value=AsyncMock(),
-    ):
-        yield
 
 
 @pytest.fixture

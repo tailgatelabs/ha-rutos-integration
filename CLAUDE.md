@@ -13,9 +13,9 @@ HACS.
 
 ## Dev Commands
 
-- **Test:** `python -m pytest tests/ -v`
-- **Lint:** `ruff check custom_components/rutos/`
-- **Format:** `ruff format custom_components/rutos/`
+- **Test:** `.venv/bin/python -m pytest tests/ -v`
+- **Lint:** `.venv/bin/ruff check custom_components/rutos/`
+- **Format:** `.venv/bin/ruff format custom_components/rutos/`
 - **Type-check:** `/opt/homebrew/bin/pyright custom_components/rutos/`
 - **HACS validate:**
   `docker run --rm -v $(pwd):/github/workspace ghcr.io/hacs/action`

@@ -6,7 +6,12 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from homeassistant.components.sensor import SensorEntity, SensorEntityDescription
+from homeassistant.components.sensor import (
+    SensorDeviceClass,
+    SensorEntity,
+    SensorEntityDescription,
+    SensorStateClass,
+)
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -19,7 +24,7 @@ from .entity import RutOSEntity
 class RutOSSensorEntityDescription(SensorEntityDescription):
     """Describe a RutOS sensor entity."""
 
-    value_fn: Callable[[dict[str, Any]], str | int | None]
+    value_fn: Callable[[dict[str, Any]], str | int | float | None]
 
 
 INTERFACE_SENSORS: tuple[RutOSSensorEntityDescription, ...] = (
@@ -47,6 +52,36 @@ INTERFACE_SENSORS: tuple[RutOSSensorEntityDescription, ...] = (
 )
 
 
+DATA_LIMIT_SENSORS: tuple[RutOSSensorEntityDescription, ...] = (
+    RutOSSensorEntityDescription(
+        key="data_used",
+        translation_key="data_used",
+        native_unit_of_measurement="B",
+        device_class=SensorDeviceClass.DATA_SIZE,
+        state_class=SensorStateClass.TOTAL,
+        value_fn=lambda d: d.get("data_used"),
+    ),
+    RutOSSensorEntityDescription(
+        key="data_limit",
+        translation_key="data_limit",
+        native_unit_of_measurement="B",
+        device_class=SensorDeviceClass.DATA_SIZE,
+        value_fn=lambda d: d.get("data_limit"),
+    ),
+    RutOSSensorEntityDescription(
+        key="data_usage_percent",
+        translation_key="data_usage_percent",
+        native_unit_of_measurement="%",
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda d: (
+            round(d["data_used"] / d["data_limit"] * 100, 1)
+            if d.get("data_limit")
+            else None
+        ),
+    ),
+)
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: ConfigEntry,
@@ -54,11 +89,21 @@ async def async_setup_entry(
 ) -> None:
     """Set up RutOS sensors based on a config entry."""
     coordinator: RutOSDataUpdateCoordinator = entry.runtime_data
-    async_add_entities([
+    entities: list[SensorEntity] = [
         RutOSSensorEntity(coordinator, description, iface["name"])
         for iface in coordinator.data.wan_interfaces
         for description in INTERFACE_SENSORS
-    ] + [RutOSActiveWANSensor(coordinator)])
+    ]
+    entities.append(RutOSActiveWANSensor(coordinator))
+    for limit in coordinator.data.data_limit:
+        limit_id = limit.get("id", "")
+        if not limit.get("enabled"):
+            continue
+        entities.extend(
+            RutOSDataLimitSensor(coordinator, desc, limit_id)
+            for desc in DATA_LIMIT_SENSORS
+        )
+    async_add_entities(entities)
 
 
 class RutOSSensorEntity(RutOSEntity, SensorEntity):
@@ -82,12 +127,48 @@ class RutOSSensorEntity(RutOSEntity, SensorEntity):
         self._attr_translation_placeholders = {"interface": interface_name}
 
     @property
-    def native_value(self) -> str | int | None:
+    def native_value(self) -> str | int | float | None:
         """Return the sensor value."""
         iface = self._find_interface(self._interface_name)
         if iface is None:
             return None
         return self.entity_description.value_fn(iface)
+
+
+class RutOSDataLimitSensor(RutOSEntity, SensorEntity):
+    """Representation of a RutOS data limit/usage sensor."""
+
+    entity_description: RutOSSensorEntityDescription
+
+    def __init__(
+        self,
+        coordinator: RutOSDataUpdateCoordinator,
+        description: RutOSSensorEntityDescription,
+        limit_id: str,
+    ) -> None:
+        """Initialize the data limit sensor."""
+        super().__init__(coordinator)
+        self.entity_description = description
+        self._limit_id = limit_id
+        self._attr_unique_id = (
+            f"{coordinator.data.device_info.get('serial', '')}_{limit_id}_{description.key}"
+        )
+        self._attr_translation_placeholders = {"limit": limit_id}
+
+    def _find_limit(self) -> dict[str, Any] | None:
+        """Find data limit entry by id."""
+        for limit in self.coordinator.data.data_limit:
+            if limit.get("id") == self._limit_id:
+                return limit
+        return None
+
+    @property
+    def native_value(self) -> str | int | float | None:
+        """Return the sensor value."""
+        limit = self._find_limit()
+        if limit is None:
+            return None
+        return self.entity_description.value_fn(limit)
 
 
 class RutOSActiveWANSensor(RutOSEntity, SensorEntity):

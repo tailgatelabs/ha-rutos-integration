@@ -63,12 +63,30 @@ def mock_wan_interfaces() -> list[dict]:
 
 
 @pytest.fixture
-def mock_rutos_data(mock_device_info, mock_wan_interfaces) -> RutOSData:
+def mock_data_limit() -> list[dict]:
+    """Return mock data limit status."""
+    return [
+        {
+            "id": "limit1",
+            "interface": "mob1s1a1",
+            "enabled": True,
+            "data_limit": 5_000_000_000,
+            "data_used": 2_500_000_000,
+            "data_warning_enabled": True,
+            "data_warning_limit": 4_000_000_000,
+            "due_reset_time": 1735689600,
+        },
+    ]
+
+
+@pytest.fixture
+def mock_rutos_data(mock_device_info, mock_wan_interfaces, mock_data_limit) -> RutOSData:
     """Return a populated RutOSData instance."""
     return RutOSData(
         device_info=mock_device_info,
         wan_interfaces=mock_wan_interfaces,
         internet_available=True,
+        data_limit=mock_data_limit,
     )
 
 
@@ -80,6 +98,19 @@ def mock_api(mock_device_info, mock_wan_interfaces) -> AsyncMock:
     api.get_device_info.return_value = mock_device_info
     api.get_wan_interfaces.return_value = mock_wan_interfaces
     api.get_internet_status.return_value = True
+    api.get_data_limit.return_value = [
+        {
+            "id": "limit1",
+            "interface": "mob1s1a1",
+            "enabled": True,
+            "data_limit": 5_000_000_000,
+            "data_used": 2_500_000_000,
+            "data_warning_enabled": True,
+            "data_warning_limit": 4_000_000_000,
+            "due_reset_time": 1735689600,
+        },
+    ]
+    api.clear_data_usage.return_value = None
     api.set_interface_enabled.return_value = None
     api.set_failover_order.return_value = None
     return api

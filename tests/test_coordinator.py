@@ -64,8 +64,11 @@ async def test_async_update_data_returns_rutos_data(
     assert isinstance(result, RutOSData)
     assert result.wan_interfaces == mock_wan_interfaces
     assert result.internet_available is True
+    assert len(result.data_limit) == 1
+    assert result.data_limit[0]["id"] == "limit1"
     mock_api.get_wan_interfaces.assert_awaited_once()
     mock_api.get_internet_status.assert_awaited_once()
+    mock_api.get_data_limit.assert_awaited_once()
 
 
 async def test_async_update_data_auth_error_raises_update_failed(
@@ -125,3 +128,4 @@ async def test_async_update_data_initializes_data_when_none(
 
     assert isinstance(result, RutOSData)
     assert result.wan_interfaces == mock_wan_interfaces
+    assert len(result.data_limit) == 1

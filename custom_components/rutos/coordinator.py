@@ -24,6 +24,7 @@ class RutOSData:
     device_info: dict[str, Any] = field(default_factory=dict)
     wan_interfaces: list[dict[str, Any]] = field(default_factory=list)
     internet_available: bool = False
+    data_limit: list[dict[str, Any]] = field(default_factory=list)
 
 
 class RutOSDataUpdateCoordinator(DataUpdateCoordinator[RutOSData]):
@@ -58,9 +59,12 @@ class RutOSDataUpdateCoordinator(DataUpdateCoordinator[RutOSData]):
             self.data = RutOSData()
 
         try:
-            wan_interfaces, internet_available = await asyncio.gather(
-                self.api.get_wan_interfaces(),
-                self.api.get_internet_status(),
+            wan_interfaces, internet_available, data_limit = (
+                await asyncio.gather(
+                    self.api.get_wan_interfaces(),
+                    self.api.get_internet_status(),
+                    self.api.get_data_limit(),
+                )
             )
         except RutOSAuthError as err:
             raise UpdateFailed(f"Authentication failed: {err}") from err
@@ -69,4 +73,5 @@ class RutOSDataUpdateCoordinator(DataUpdateCoordinator[RutOSData]):
 
         self.data.wan_interfaces = wan_interfaces
         self.data.internet_available = internet_available
+        self.data.data_limit = data_limit
         return self.data

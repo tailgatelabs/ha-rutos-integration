@@ -36,6 +36,26 @@
       },
       "active_wan": {
         "name": "Active WAN interface"
+      },
+      "gps_speed": {
+        "name": "GPS speed"
+      },
+      "gps_altitude": {
+        "name": "GPS altitude"
+      },
+      "gps_satellites": {
+        "name": "GPS satellites"
+      },
+      "gps_heading": {
+        "name": "GPS heading"
+      },
+      "gps_fix_status": {
+        "name": "GPS fix status"
+      }
+    },
+    "device_tracker": {
+      "gps_location": {
+        "name": "GPS location"
       }
     },
     "binary_sensor": {

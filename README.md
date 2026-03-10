@@ -22,6 +22,8 @@ failover control.
 - **WAN Interface Switches** — Enable/disable individual WAN interfaces
 - **Failover Ordering** — Service call to reorder WAN interface failover
   priority
+- **GPS Tracking** — Device tracker with real-time location on the HA map, plus
+  sensors for speed, altitude, heading, satellites, and fix status
 
 ## Installation
 

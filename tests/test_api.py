@@ -662,3 +662,63 @@ class TestGetInternetStatusVariants:
             )
 
             assert await api_client.get_internet_status() is True
+
+
+class TestGetGPSPosition:
+    """Tests for get_gps_position."""
+
+    async def test_get_gps_position_success(self, api_client):
+        """Test parsing of GPS position response."""
+        gps_data = {
+            "latitude": 37.7749,
+            "longitude": -122.4194,
+            "accuracy": 5,
+            "altitude": 15.2,
+            "speed": 65.3,
+            "angle": 180,
+            "satellites": 12,
+            "fix_status": "3D",
+        }
+        with aioresponses() as m:
+            m.post(_url("/login"), payload=_login_success())
+            m.get(_url("/gps/position/status"), payload=_success(gps_data))
+
+            result = await api_client.get_gps_position()
+
+            assert result["latitude"] == 37.7749
+            assert result["longitude"] == -122.4194
+            assert result["speed"] == 65.3
+            assert result["satellites"] == 12
+
+    async def test_get_gps_position_no_fix(self, api_client):
+        """Test returns None when no GPS fix (no lat/lon)."""
+        with aioresponses() as m:
+            m.post(_url("/login"), payload=_login_success())
+            m.get(
+                _url("/gps/position/status"),
+                payload=_success({"fix_status": "no_fix"}),
+            )
+
+            result = await api_client.get_gps_position()
+            assert result is None
+
+    async def test_get_gps_position_api_error(self, api_client):
+        """Test returns None on API error (GPS not available)."""
+        with aioresponses() as m:
+            m.post(_url("/login"), payload=_login_success())
+            m.get(
+                _url("/gps/position/status"),
+                payload=_error("Service unavailable"),
+            )
+
+            result = await api_client.get_gps_position()
+            assert result is None
+
+    async def test_get_gps_position_non_dict(self, api_client):
+        """Test returns None for non-dict response."""
+        with aioresponses() as m:
+            m.post(_url("/login"), payload=_login_success())
+            m.get(_url("/gps/position/status"), payload=_success([]))
+
+            result = await api_client.get_gps_position()
+            assert result is None

@@ -264,6 +264,33 @@ class RutOSAPI:
             if isinstance(modem, dict) and modem.get("id")
         ]
 
+    async def get_modem_signal(self) -> list[dict[str, Any]]:
+        """Fetch signal strength data for all modems."""
+        try:
+            data = await self.get("/modems/signal/status")
+        except RutOSAPIError:
+            return []
+
+        if not isinstance(data, list):
+            return []
+
+        modems: list[dict[str, Any]] = []
+        for modem in data:
+            if not isinstance(modem, dict):
+                continue
+            modem_id = modem.get("id", "")
+            modems.append({
+                "id": modem_id,
+                "rssi": modem.get("rssi"),
+                "rsrp": modem.get("rsrp"),
+                "rsrq": modem.get("rsrq"),
+                "sinr": modem.get("sinr"),
+                "network_type": modem.get("network_type"),
+                "band": modem.get("band"),
+                "channel_number": modem.get("channel_number"),
+            })
+        return modems
+
     async def set_failover_order(self, interfaces: list[str]) -> None:
         """Set the failover order by updating interface metrics."""
         for idx, iface_id in enumerate(interfaces):

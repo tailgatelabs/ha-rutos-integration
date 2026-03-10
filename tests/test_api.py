@@ -721,3 +721,62 @@ class TestGetModems:
 
             result = await api_client.get_modems()
             assert result == []
+
+
+class TestGetModemSignal:
+    """Tests for get_modem_signal."""
+
+    async def test_get_modem_signal_success(self, api_client):
+        """Test parsing of modem signal response."""
+        signal_data = [
+            {
+                "id": "modem1",
+                "rssi": -65,
+                "rsrp": -95,
+                "rsrq": -10,
+                "sinr": 12,
+                "network_type": "LTE",
+                "band": "B7",
+                "channel_number": 3100,
+            },
+        ]
+        with aioresponses() as m:
+            m.post(_url("/login"), payload=_login_success())
+            m.get(_url("/modems/signal/status"), payload=_success(signal_data))
+
+            result = await api_client.get_modem_signal()
+
+            assert len(result) == 1
+            assert result[0]["id"] == "modem1"
+            assert result[0]["rsrp"] == -95
+            assert result[0]["network_type"] == "LTE"
+
+    async def test_get_modem_signal_empty(self, api_client):
+        """Test returns empty list when no modems."""
+        with aioresponses() as m:
+            m.post(_url("/login"), payload=_login_success())
+            m.get(_url("/modems/signal/status"), payload=_success([]))
+
+            result = await api_client.get_modem_signal()
+            assert result == []
+
+    async def test_get_modem_signal_api_error(self, api_client):
+        """Test returns empty list on API error."""
+        with aioresponses() as m:
+            m.post(_url("/login"), payload=_login_success())
+            m.get(
+                _url("/modems/signal/status"),
+                payload=_error("Service unavailable"),
+            )
+
+            result = await api_client.get_modem_signal()
+            assert result == []
+
+    async def test_get_modem_signal_non_list(self, api_client):
+        """Test returns empty list for non-list response."""
+        with aioresponses() as m:
+            m.post(_url("/login"), payload=_login_success())
+            m.get(_url("/modems/signal/status"), payload=_success({"unexpected": True}))
+
+            result = await api_client.get_modem_signal()
+            assert result == []

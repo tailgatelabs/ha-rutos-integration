@@ -13,8 +13,10 @@ from custom_components.rutos.coordinator import RutOSData, RutOSDataUpdateCoordi
 from custom_components.rutos.sensor import (
     DATA_LIMIT_SENSORS,
     INTERFACE_SENSORS,
+    MODEM_SIGNAL_SENSORS,
     RutOSActiveWANSensor,
     RutOSDataLimitSensor,
+    RutOSModemSignalSensor,
     RutOSSensorEntity,
 )
 
@@ -179,3 +181,71 @@ class TestRutOSDataLimitSensor:
         desc = DATA_LIMIT_SENSORS[0]
         sensor = RutOSDataLimitSensor(mock_coordinator, desc, "limit1")
         assert sensor.unique_id == "1234567890_limit1_data_used"
+
+
+class TestRutOSModemSignalSensor:
+    """Tests for modem signal sensor entities."""
+
+    def test_rssi_value(
+        self, mock_coordinator: RutOSDataUpdateCoordinator
+    ):
+        """Test RSSI sensor returns signal strength."""
+        desc = MODEM_SIGNAL_SENSORS[0]  # rssi
+        sensor = RutOSModemSignalSensor(mock_coordinator, desc, "modem1")
+        assert sensor.native_value == -65
+
+    def test_rsrp_value(
+        self, mock_coordinator: RutOSDataUpdateCoordinator
+    ):
+        """Test RSRP sensor returns reference signal power."""
+        desc = MODEM_SIGNAL_SENSORS[1]  # rsrp
+        sensor = RutOSModemSignalSensor(mock_coordinator, desc, "modem1")
+        assert sensor.native_value == -95
+
+    def test_rsrq_value(
+        self, mock_coordinator: RutOSDataUpdateCoordinator
+    ):
+        """Test RSRQ sensor returns reference signal quality."""
+        desc = MODEM_SIGNAL_SENSORS[2]  # rsrq
+        sensor = RutOSModemSignalSensor(mock_coordinator, desc, "modem1")
+        assert sensor.native_value == -10
+
+    def test_sinr_value(
+        self, mock_coordinator: RutOSDataUpdateCoordinator
+    ):
+        """Test SINR sensor returns signal-to-noise ratio."""
+        desc = MODEM_SIGNAL_SENSORS[3]  # sinr
+        sensor = RutOSModemSignalSensor(mock_coordinator, desc, "modem1")
+        assert sensor.native_value == 12
+
+    def test_network_type_value(
+        self, mock_coordinator: RutOSDataUpdateCoordinator
+    ):
+        """Test network type sensor returns LTE/5G etc."""
+        desc = MODEM_SIGNAL_SENSORS[4]  # network_type
+        sensor = RutOSModemSignalSensor(mock_coordinator, desc, "modem1")
+        assert sensor.native_value == "LTE"
+
+    def test_band_value(
+        self, mock_coordinator: RutOSDataUpdateCoordinator
+    ):
+        """Test band sensor returns band identifier."""
+        desc = MODEM_SIGNAL_SENSORS[5]  # band
+        sensor = RutOSModemSignalSensor(mock_coordinator, desc, "modem1")
+        assert sensor.native_value == "B7"
+
+    def test_missing_modem_returns_none(
+        self, mock_coordinator: RutOSDataUpdateCoordinator
+    ):
+        """Test returns None when modem not found."""
+        desc = MODEM_SIGNAL_SENSORS[0]
+        sensor = RutOSModemSignalSensor(mock_coordinator, desc, "nonexistent")
+        assert sensor.native_value is None
+
+    def test_unique_id_format(
+        self, mock_coordinator: RutOSDataUpdateCoordinator
+    ):
+        """Test unique_id follows {serial}_{modem}_{key} pattern."""
+        desc = MODEM_SIGNAL_SENSORS[0]
+        sensor = RutOSModemSignalSensor(mock_coordinator, desc, "modem1")
+        assert sensor.unique_id == "1234567890_modem1_rssi"

@@ -24,6 +24,8 @@ failover control.
   priority
 - **Data Usage** — Data used, data limit, and usage percentage for each
   configured data limit, plus a button to reset usage counters
+- **Cellular Signal** — RSSI, RSRP, RSRQ, SINR, network type, and band for each
+  modem
 - **Modem Reboot** — Button to reboot individual modems without rebooting the
   entire device
 

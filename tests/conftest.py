@@ -80,13 +80,20 @@ def mock_modem_signal() -> list[dict]:
 
 
 @pytest.fixture
-def mock_rutos_data(mock_device_info, mock_wan_interfaces, mock_modem_signal) -> RutOSData:
+def mock_modems() -> list[dict]:
+    """Return mock modem list."""
+    return [{"id": "modem1"}]
+
+
+@pytest.fixture
+def mock_rutos_data(mock_device_info, mock_wan_interfaces, mock_modem_signal, mock_modems) -> RutOSData:
     """Return a populated RutOSData instance."""
     return RutOSData(
         device_info=mock_device_info,
         wan_interfaces=mock_wan_interfaces,
         internet_available=True,
         modem_signal=mock_modem_signal,
+        modems=mock_modems,
     )
 
 
@@ -110,6 +117,8 @@ def mock_api(mock_device_info, mock_wan_interfaces) -> AsyncMock:
             "channel_number": 3100,
         },
     ]
+    api.get_modems.return_value = [{"id": "modem1"}]
+    api.reboot_modem.return_value = None
     api.set_interface_enabled.return_value = None
     api.set_failover_order.return_value = None
     return api

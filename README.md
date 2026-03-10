@@ -24,6 +24,8 @@ failover control.
   priority
 - **Cellular Signal** — RSSI, RSRP, RSRQ, SINR, network type, and band for each
   modem
+- **Modem Reboot** — Button to reboot individual modems without rebooting the
+  entire device
 
 ## Installation
 

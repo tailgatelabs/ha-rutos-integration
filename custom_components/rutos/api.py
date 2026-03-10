@@ -244,6 +244,26 @@ class RutOSAPI:
             {"data": {"enabled": "1" if enabled else "0"}},
         )
 
+    async def reboot_modem(self, modem_id: str) -> None:
+        """Reboot a specific modem."""
+        await self.post(f"/modems/{modem_id}/actions/reboot")
+
+    async def get_modems(self) -> list[dict[str, Any]]:
+        """Fetch list of available modems."""
+        try:
+            data = await self.get("/modems/signal/status")
+        except RutOSAPIError:
+            return []
+
+        if not isinstance(data, list):
+            return []
+
+        return [
+            {"id": modem.get("id", "")}
+            for modem in data
+            if isinstance(modem, dict) and modem.get("id")
+        ]
+
     async def get_modem_signal(self) -> list[dict[str, Any]]:
         """Fetch signal strength data for all modems."""
         try:

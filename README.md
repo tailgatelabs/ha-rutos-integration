@@ -22,6 +22,8 @@ failover control.
 - **WAN Interface Switches** — Enable/disable individual WAN interfaces
 - **Failover Ordering** — Service call to reorder WAN interface failover
   priority
+- **Modem Reboot** — Button to reboot individual modems without rebooting the
+  entire device
 
 ## Installation
 

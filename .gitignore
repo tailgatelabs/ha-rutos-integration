@@ -1,3 +1,4 @@
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
@@ -7,19 +8,35 @@ build/
 *.egg
 .eggs/
 *.so
+
+# Environment
 .env
 .venv
 venv/
 ENV/
+
+# Testing / Linting
 .tox/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.pyright/
 htmlcov/
 .coverage
+
+# Claude Code
+.claude/settings.local.json
+.claude/plans/
+
+# Serena
+.serena/memories/
+
+# OS
 *.log
 .DS_Store
 Thumbs.db
+
+# Editor
 *.swp
 *.swo
 *~

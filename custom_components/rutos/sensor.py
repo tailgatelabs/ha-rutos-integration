@@ -52,6 +52,43 @@ INTERFACE_SENSORS: tuple[RutOSSensorEntityDescription, ...] = (
 )
 
 
+GPS_SENSORS: tuple[RutOSSensorEntityDescription, ...] = (
+    RutOSSensorEntityDescription(
+        key="gps_speed",
+        translation_key="gps_speed",
+        native_unit_of_measurement="km/h",
+        device_class=SensorDeviceClass.SPEED,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda gps: gps.get("speed"),
+    ),
+    RutOSSensorEntityDescription(
+        key="gps_altitude",
+        translation_key="gps_altitude",
+        native_unit_of_measurement="m",
+        device_class=SensorDeviceClass.DISTANCE,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda gps: gps.get("altitude"),
+    ),
+    RutOSSensorEntityDescription(
+        key="gps_satellites",
+        translation_key="gps_satellites",
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda gps: gps.get("satellites"),
+    ),
+    RutOSSensorEntityDescription(
+        key="gps_heading",
+        translation_key="gps_heading",
+        native_unit_of_measurement="°",
+        value_fn=lambda gps: gps.get("angle"),
+    ),
+    RutOSSensorEntityDescription(
+        key="gps_fix_status",
+        translation_key="gps_fix_status",
+        value_fn=lambda gps: gps.get("fix_status"),
+    ),
+)
+
+
 DATA_LIMIT_SENSORS: tuple[RutOSSensorEntityDescription, ...] = (
     RutOSSensorEntityDescription(
         key="data_used",
@@ -139,6 +176,9 @@ async def async_setup_entry(
         for description in INTERFACE_SENSORS
     ]
     entities.append(RutOSActiveWANSensor(coordinator))
+    entities.extend(
+        RutOSGPSSensorEntity(coordinator, desc) for desc in GPS_SENSORS
+    )
     for limit in coordinator.data.data_limit:
         limit_id = limit.get("id", "")
         if not limit.get("enabled"):
@@ -183,6 +223,32 @@ class RutOSSensorEntity(RutOSEntity, SensorEntity):
         if iface is None:
             return None
         return self.entity_description.value_fn(iface)
+
+
+class RutOSGPSSensorEntity(RutOSEntity, SensorEntity):
+    """Representation of a RutOS GPS sensor."""
+
+    entity_description: RutOSSensorEntityDescription
+
+    def __init__(
+        self,
+        coordinator: RutOSDataUpdateCoordinator,
+        description: RutOSSensorEntityDescription,
+    ) -> None:
+        """Initialize the GPS sensor."""
+        super().__init__(coordinator)
+        self.entity_description = description
+        self._attr_unique_id = (
+            f"{coordinator.data.device_info.get('serial', '')}_{description.key}"
+        )
+
+    @property
+    def native_value(self) -> str | int | float | None:
+        """Return the sensor value."""
+        gps = self.coordinator.data.gps_position
+        if gps is None:
+            return None
+        return self.entity_description.value_fn(gps)
 
 
 class RutOSDataLimitSensor(RutOSEntity, SensorEntity):

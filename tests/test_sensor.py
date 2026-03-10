@@ -2,19 +2,18 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock
 
-import pytest
 
-from homeassistant.core import HomeAssistant
 
 from custom_components.rutos.const import DOMAIN
-from custom_components.rutos.coordinator import RutOSData, RutOSDataUpdateCoordinator
+from custom_components.rutos.coordinator import RutOSDataUpdateCoordinator
 from custom_components.rutos.sensor import (
+    GPS_SENSORS,
     DATA_LIMIT_SENSORS,
     INTERFACE_SENSORS,
     MODEM_SIGNAL_SENSORS,
     RutOSActiveWANSensor,
+    RutOSGPSSensorEntity,
     RutOSDataLimitSensor,
     RutOSModemSignalSensor,
     RutOSSensorEntity,
@@ -128,6 +127,67 @@ class TestRutOSActiveWANSensor:
         """Test unique_id is {serial}_active_wan."""
         sensor = RutOSActiveWANSensor(mock_coordinator)
         assert sensor.unique_id == "1234567890_active_wan"
+
+
+class TestRutOSGPSSensorEntity:
+    """Tests for GPS sensor entities."""
+
+    def test_speed_sensor_value(
+        self, mock_coordinator: RutOSDataUpdateCoordinator
+    ):
+        """Test GPS speed sensor returns speed from GPS data."""
+        desc = GPS_SENSORS[0]  # speed
+        sensor = RutOSGPSSensorEntity(mock_coordinator, desc)
+        assert sensor.native_value == 65.3
+
+    def test_altitude_sensor_value(
+        self, mock_coordinator: RutOSDataUpdateCoordinator
+    ):
+        """Test GPS altitude sensor returns altitude from GPS data."""
+        desc = GPS_SENSORS[1]  # altitude
+        sensor = RutOSGPSSensorEntity(mock_coordinator, desc)
+        assert sensor.native_value == 15.2
+
+    def test_satellites_sensor_value(
+        self, mock_coordinator: RutOSDataUpdateCoordinator
+    ):
+        """Test GPS satellites sensor returns count."""
+        desc = GPS_SENSORS[2]  # satellites
+        sensor = RutOSGPSSensorEntity(mock_coordinator, desc)
+        assert sensor.native_value == 12
+
+    def test_heading_sensor_value(
+        self, mock_coordinator: RutOSDataUpdateCoordinator
+    ):
+        """Test GPS heading sensor returns angle."""
+        desc = GPS_SENSORS[3]  # heading
+        sensor = RutOSGPSSensorEntity(mock_coordinator, desc)
+        assert sensor.native_value == 180
+
+    def test_fix_status_sensor_value(
+        self, mock_coordinator: RutOSDataUpdateCoordinator
+    ):
+        """Test GPS fix status sensor returns fix type."""
+        desc = GPS_SENSORS[4]  # fix_status
+        sensor = RutOSGPSSensorEntity(mock_coordinator, desc)
+        assert sensor.native_value == "3D"
+
+    def test_no_gps_returns_none(
+        self, mock_coordinator: RutOSDataUpdateCoordinator
+    ):
+        """Test GPS sensor returns None when no GPS data."""
+        mock_coordinator.data.gps_position = None
+        desc = GPS_SENSORS[0]
+        sensor = RutOSGPSSensorEntity(mock_coordinator, desc)
+        assert sensor.native_value is None
+
+    def test_unique_id_format(
+        self, mock_coordinator: RutOSDataUpdateCoordinator
+    ):
+        """Test unique_id follows {serial}_{key} pattern."""
+        desc = GPS_SENSORS[0]
+        sensor = RutOSGPSSensorEntity(mock_coordinator, desc)
+        assert sensor.unique_id == "1234567890_gps_speed"
 
 
 class TestRutOSDataLimitSensor:

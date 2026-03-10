@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -63,6 +63,21 @@ def mock_wan_interfaces() -> list[dict]:
 
 
 @pytest.fixture
+def mock_gps_position() -> dict:
+    """Return mock GPS position data."""
+    return {
+        "latitude": 37.7749,
+        "longitude": -122.4194,
+        "accuracy": 5,
+        "altitude": 15.2,
+        "speed": 65.3,
+        "angle": 180,
+        "satellites": 12,
+        "fix_status": "3D",
+    }
+
+
+@pytest.fixture
 def mock_data_limit() -> list[dict]:
     """Return mock data limit status."""
     return [
@@ -103,12 +118,13 @@ def mock_modems() -> list[dict]:
 
 
 @pytest.fixture
-def mock_rutos_data(mock_device_info, mock_wan_interfaces, mock_data_limit, mock_modem_signal, mock_modems) -> RutOSData:
+def mock_rutos_data(mock_device_info, mock_wan_interfaces, mock_gps_position, mock_data_limit, mock_modem_signal, mock_modems) -> RutOSData:
     """Return a populated RutOSData instance."""
     return RutOSData(
         device_info=mock_device_info,
         wan_interfaces=mock_wan_interfaces,
         internet_available=True,
+        gps_position=mock_gps_position,
         data_limit=mock_data_limit,
         modem_signal=mock_modem_signal,
         modems=mock_modems,
@@ -123,6 +139,16 @@ def mock_api(mock_device_info, mock_wan_interfaces) -> AsyncMock:
     api.get_device_info.return_value = mock_device_info
     api.get_wan_interfaces.return_value = mock_wan_interfaces
     api.get_internet_status.return_value = True
+    api.get_gps_position.return_value = {
+        "latitude": 37.7749,
+        "longitude": -122.4194,
+        "accuracy": 5,
+        "altitude": 15.2,
+        "speed": 65.3,
+        "angle": 180,
+        "satellites": 12,
+        "fix_status": "3D",
+    }
     api.get_data_limit.return_value = [
         {
             "id": "limit1",

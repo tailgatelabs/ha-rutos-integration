@@ -37,6 +37,21 @@
       "active_wan": {
         "name": "Active WAN interface"
       },
+      "gps_speed": {
+        "name": "GPS speed"
+      },
+      "gps_altitude": {
+        "name": "GPS altitude"
+      },
+      "gps_satellites": {
+        "name": "GPS satellites"
+      },
+      "gps_heading": {
+        "name": "GPS heading"
+      },
+      "gps_fix_status": {
+        "name": "GPS fix status"
+      },
       "data_used": {
         "name": "{limit} data used"
       },
@@ -63,6 +78,11 @@
       },
       "modem_band": {
         "name": "{modem} band"
+      }
+    },
+    "device_tracker": {
+      "gps_location": {
+        "name": "GPS location"
       }
     },
     "button": {

@@ -329,3 +329,28 @@ class RutOSAPI:
                 f"/interfaces/config/{iface_id}",
                 {"data": {"metric": str(metric)}},
             )
+
+    async def get_gps_position(self) -> dict[str, Any] | None:
+        """Fetch GPS position data (lat, lon, speed, altitude, etc.)."""
+        try:
+            data = await self.get("/gps/position/status")
+        except RutOSAPIError:
+            return None
+
+        if not isinstance(data, dict):
+            return None
+
+        # Only return data if we have a valid fix
+        if not data.get("latitude") and not data.get("longitude"):
+            return None
+
+        return {
+            "latitude": data.get("latitude"),
+            "longitude": data.get("longitude"),
+            "accuracy": data.get("accuracy"),
+            "altitude": data.get("altitude"),
+            "speed": data.get("speed"),
+            "angle": data.get("angle"),
+            "satellites": data.get("satellites"),
+            "fix_status": data.get("fix_status"),
+        }

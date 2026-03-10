@@ -24,6 +24,8 @@ failover control.
   priority
 - **Data Usage** — Data used, data limit, and usage percentage for each
   configured data limit, plus a button to reset usage counters
+- **Modem Reboot** — Button to reboot individual modems without rebooting the
+  entire device
 
 ## Installation
 

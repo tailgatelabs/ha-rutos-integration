@@ -740,3 +740,62 @@ class TestClearDataUsage:
                 if key[0] == "POST" and "clear" in str(key[1])
             )
             assert post_count == 1
+
+
+class TestRebootModem:
+    """Tests for reboot_modem."""
+
+    async def test_reboot_modem(self, api_client):
+        """Test modem reboot sends POST to correct endpoint."""
+        with aioresponses() as m:
+            m.post(_url("/login"), payload=_login_success())
+            m.post(_url("/modems/modem1/actions/reboot"), payload=_success())
+
+            await api_client.reboot_modem("modem1")
+
+            post_count = sum(
+                1 for key in m.requests
+                if key[0] == "POST" and "modem1" in str(key[1])
+            )
+            assert post_count == 1
+
+
+class TestGetModems:
+    """Tests for get_modems."""
+
+    async def test_get_modems_success(self, api_client):
+        """Test parsing modem list from signal status."""
+        signal_data = [
+            {"id": "modem1", "rssi": -65},
+            {"id": "modem2", "rssi": -70},
+        ]
+        with aioresponses() as m:
+            m.post(_url("/login"), payload=_login_success())
+            m.get(_url("/modems/signal/status"), payload=_success(signal_data))
+
+            result = await api_client.get_modems()
+
+            assert len(result) == 2
+            assert result[0]["id"] == "modem1"
+            assert result[1]["id"] == "modem2"
+
+    async def test_get_modems_empty(self, api_client):
+        """Test returns empty list when no modems."""
+        with aioresponses() as m:
+            m.post(_url("/login"), payload=_login_success())
+            m.get(_url("/modems/signal/status"), payload=_success([]))
+
+            result = await api_client.get_modems()
+            assert result == []
+
+    async def test_get_modems_api_error(self, api_client):
+        """Test returns empty list on API error."""
+        with aioresponses() as m:
+            m.post(_url("/login"), payload=_login_success())
+            m.get(
+                _url("/modems/signal/status"),
+                payload=_error("Service unavailable"),
+            )
+
+            result = await api_client.get_modems()
+            assert result == []

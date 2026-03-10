@@ -274,6 +274,26 @@ class RutOSAPI:
         """Clear/reset data usage counters."""
         await self.post("/data_limit/actions/clear")
 
+    async def reboot_modem(self, modem_id: str) -> None:
+        """Reboot a specific modem."""
+        await self.post(f"/modems/{modem_id}/actions/reboot")
+
+    async def get_modems(self) -> list[dict[str, Any]]:
+        """Fetch list of available modems."""
+        try:
+            data = await self.get("/modems/signal/status")
+        except RutOSAPIError:
+            return []
+
+        if not isinstance(data, list):
+            return []
+
+        return [
+            {"id": modem.get("id", "")}
+            for modem in data
+            if isinstance(modem, dict) and modem.get("id")
+        ]
+
     async def set_failover_order(self, interfaces: list[str]) -> None:
         """Set the failover order by updating interface metrics."""
         for idx, iface_id in enumerate(interfaces):

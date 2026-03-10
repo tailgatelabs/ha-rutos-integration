@@ -664,6 +664,84 @@ class TestGetInternetStatusVariants:
             assert await api_client.get_internet_status() is True
 
 
+class TestGetDataLimit:
+    """Tests for get_data_limit."""
+
+    async def test_get_data_limit_success(self, api_client):
+        """Test parsing of data limit status response."""
+        data = [
+            {
+                "id": "limit1",
+                "interface": "mob1s1a1",
+                "enabled": True,
+                "data_limit": 5000000000,
+                "data_used": 2500000000,
+                "data_warning_enabled": True,
+                "data_warning_limit": 4000000000,
+                "due_reset_time": 1735689600,
+            },
+        ]
+        with aioresponses() as m:
+            m.post(_url("/login"), payload=_login_success())
+            m.get(_url("/data_limit/status"), payload=_success(data))
+
+            result = await api_client.get_data_limit()
+
+            assert len(result) == 1
+            assert result[0]["id"] == "limit1"
+            assert result[0]["data_used"] == 2500000000
+            assert result[0]["data_limit"] == 5000000000
+
+    async def test_get_data_limit_empty(self, api_client):
+        """Test returns empty list when no limits configured."""
+        with aioresponses() as m:
+            m.post(_url("/login"), payload=_login_success())
+            m.get(_url("/data_limit/status"), payload=_success([]))
+
+            result = await api_client.get_data_limit()
+            assert result == []
+
+    async def test_get_data_limit_api_error(self, api_client):
+        """Test returns empty list on API error."""
+        with aioresponses() as m:
+            m.post(_url("/login"), payload=_login_success())
+            m.get(
+                _url("/data_limit/status"),
+                payload=_error("Service unavailable"),
+            )
+
+            result = await api_client.get_data_limit()
+            assert result == []
+
+    async def test_get_data_limit_non_list(self, api_client):
+        """Test returns empty list for non-list response."""
+        with aioresponses() as m:
+            m.post(_url("/login"), payload=_login_success())
+            m.get(_url("/data_limit/status"), payload=_success({"unexpected": True}))
+
+            result = await api_client.get_data_limit()
+            assert result == []
+
+
+class TestClearDataUsage:
+    """Tests for clear_data_usage."""
+
+    async def test_clear_data_usage(self, api_client):
+        """Test clear data usage sends POST."""
+        with aioresponses() as m:
+            m.post(_url("/login"), payload=_login_success())
+            m.post(_url("/data_limit/actions/clear"), payload=_success())
+
+            await api_client.clear_data_usage()
+
+            # Verify the POST was sent
+            post_count = sum(
+                1 for key in m.requests
+                if key[0] == "POST" and "clear" in str(key[1])
+            )
+            assert post_count == 1
+
+
 class TestRebootModem:
     """Tests for reboot_modem."""
 

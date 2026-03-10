@@ -11,9 +11,11 @@ from homeassistant.core import HomeAssistant
 from custom_components.rutos.const import DOMAIN
 from custom_components.rutos.coordinator import RutOSData, RutOSDataUpdateCoordinator
 from custom_components.rutos.sensor import (
+    DATA_LIMIT_SENSORS,
     INTERFACE_SENSORS,
     MODEM_SIGNAL_SENSORS,
     RutOSActiveWANSensor,
+    RutOSDataLimitSensor,
     RutOSModemSignalSensor,
     RutOSSensorEntity,
 )
@@ -126,6 +128,59 @@ class TestRutOSActiveWANSensor:
         """Test unique_id is {serial}_active_wan."""
         sensor = RutOSActiveWANSensor(mock_coordinator)
         assert sensor.unique_id == "1234567890_active_wan"
+
+
+class TestRutOSDataLimitSensor:
+    """Tests for data limit sensor entities."""
+
+    def test_data_used_value(
+        self, mock_coordinator: RutOSDataUpdateCoordinator
+    ):
+        """Test data used sensor returns bytes used."""
+        desc = DATA_LIMIT_SENSORS[0]  # data_used
+        sensor = RutOSDataLimitSensor(mock_coordinator, desc, "limit1")
+        assert sensor.native_value == 2_500_000_000
+
+    def test_data_limit_value(
+        self, mock_coordinator: RutOSDataUpdateCoordinator
+    ):
+        """Test data limit sensor returns limit in bytes."""
+        desc = DATA_LIMIT_SENSORS[1]  # data_limit
+        sensor = RutOSDataLimitSensor(mock_coordinator, desc, "limit1")
+        assert sensor.native_value == 5_000_000_000
+
+    def test_data_usage_percent(
+        self, mock_coordinator: RutOSDataUpdateCoordinator
+    ):
+        """Test data usage percent is calculated correctly."""
+        desc = DATA_LIMIT_SENSORS[2]  # data_usage_percent
+        sensor = RutOSDataLimitSensor(mock_coordinator, desc, "limit1")
+        assert sensor.native_value == 50.0
+
+    def test_data_usage_percent_zero_limit(
+        self, mock_coordinator: RutOSDataUpdateCoordinator
+    ):
+        """Test data usage percent returns None when limit is 0."""
+        mock_coordinator.data.data_limit[0]["data_limit"] = 0
+        desc = DATA_LIMIT_SENSORS[2]
+        sensor = RutOSDataLimitSensor(mock_coordinator, desc, "limit1")
+        assert sensor.native_value is None
+
+    def test_missing_limit_returns_none(
+        self, mock_coordinator: RutOSDataUpdateCoordinator
+    ):
+        """Test returns None when limit not found."""
+        desc = DATA_LIMIT_SENSORS[0]
+        sensor = RutOSDataLimitSensor(mock_coordinator, desc, "nonexistent")
+        assert sensor.native_value is None
+
+    def test_unique_id_format(
+        self, mock_coordinator: RutOSDataUpdateCoordinator
+    ):
+        """Test unique_id follows {serial}_{limit}_{key} pattern."""
+        desc = DATA_LIMIT_SENSORS[0]
+        sensor = RutOSDataLimitSensor(mock_coordinator, desc, "limit1")
+        assert sensor.unique_id == "1234567890_limit1_data_used"
 
 
 class TestRutOSModemSignalSensor:

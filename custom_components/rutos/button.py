@@ -18,10 +18,32 @@ async def async_setup_entry(
 ) -> None:
     """Set up RutOS buttons based on a config entry."""
     coordinator: RutOSDataUpdateCoordinator = entry.runtime_data
-    async_add_entities([
+    entities: list[ButtonEntity] = []
+    if coordinator.data.data_limit:
+        entities.append(RutOSClearDataUsageButton(coordinator))
+    entities.extend(
         RutOSModemRebootButton(coordinator, modem["id"])
         for modem in coordinator.data.modems
-    ])
+    )
+    async_add_entities(entities)
+
+
+class RutOSClearDataUsageButton(RutOSEntity, ButtonEntity):
+    """Button to clear/reset data usage counters."""
+
+    _attr_translation_key = "clear_data_usage"
+
+    def __init__(self, coordinator: RutOSDataUpdateCoordinator) -> None:
+        """Initialize the button."""
+        super().__init__(coordinator)
+        self._attr_unique_id = (
+            f"{coordinator.data.device_info.get('serial', '')}_clear_data_usage"
+        )
+
+    async def async_press(self) -> None:
+        """Handle the button press."""
+        await self.coordinator.api.clear_data_usage()
+        await self.coordinator.async_request_refresh()
 
 
 class RutOSModemRebootButton(RutOSEntity, ButtonEntity):

@@ -37,6 +37,15 @@
       "active_wan": {
         "name": "Active WAN interface"
       },
+      "data_used": {
+        "name": "{limit} data used"
+      },
+      "data_limit": {
+        "name": "{limit} data limit"
+      },
+      "data_usage_percent": {
+        "name": "{limit} data usage"
+      },
       "modem_rssi": {
         "name": "{modem} RSSI"
       },
@@ -57,6 +66,9 @@
       }
     },
     "button": {
+      "clear_data_usage": {
+        "name": "Clear data usage"
+      },
       "modem_reboot": {
         "name": "Reboot {modem}"
       }

@@ -181,6 +181,14 @@ class TestRutOSGPSSensorEntity:
         sensor = RutOSGPSSensorEntity(mock_coordinator, desc)
         assert sensor.native_value is None
 
+    def test_accuracy_sensor_value(
+        self, mock_coordinator: RutOSDataUpdateCoordinator
+    ):
+        """Test GPS accuracy sensor returns accuracy from GPS data."""
+        desc = GPS_SENSORS[5]  # accuracy
+        sensor = RutOSGPSSensorEntity(mock_coordinator, desc)
+        assert sensor.native_value == 5
+
     def test_unique_id_format(
         self, mock_coordinator: RutOSDataUpdateCoordinator
     ):

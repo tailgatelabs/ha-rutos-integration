@@ -11,7 +11,15 @@ from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 
 from custom_components.rutos.api import RutOSAuthError, RutOSConnectionError
-from custom_components.rutos.const import CONF_HOST, CONF_PASSWORD, CONF_USERNAME, DOMAIN
+from custom_components.rutos.const import (
+    CONF_HOST,
+    CONF_PASSWORD,
+    CONF_UPDATE_HOME_LOCATION,
+    CONF_USERNAME,
+    DOMAIN,
+)
+
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 USER_INPUT = {
     CONF_HOST: "192.168.1.1",
@@ -176,3 +184,35 @@ async def test_no_serial_creates_entry_without_unique_id(hass: HomeAssistant):
 
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["title"] == "RUTX50"
+
+
+async def test_options_flow_shows_form(hass: HomeAssistant, mock_config_entry):
+    """Test options flow shows init form with default values."""
+    mock_config_entry.add_to_hass(hass)
+
+    with patch("custom_components.rutos.async_setup_entry", return_value=True):
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+    result = await hass.config_entries.options.async_init(mock_config_entry.entry_id)
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "init"
+
+
+async def test_options_flow_saves_option(hass: HomeAssistant, mock_config_entry):
+    """Test options flow saves the update_home_location option."""
+    mock_config_entry.add_to_hass(hass)
+
+    with patch("custom_components.rutos.async_setup_entry", return_value=True):
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+    result = await hass.config_entries.options.async_init(mock_config_entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        user_input={CONF_UPDATE_HOME_LOCATION: False},
+    )
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert mock_config_entry.options[CONF_UPDATE_HOME_LOCATION] is False

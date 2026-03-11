@@ -20,10 +20,12 @@ async def async_setup_entry(
 ) -> None:
     """Set up RutOS switches based on a config entry."""
     coordinator: RutOSDataUpdateCoordinator = entry.runtime_data
-    async_add_entities([
-        RutOSInterfaceSwitch(coordinator, iface["name"])
-        for iface in coordinator.data.wan_interfaces
-    ])
+    async_add_entities(
+        [
+            RutOSInterfaceSwitch(coordinator, iface["name"])
+            for iface in coordinator.data.wan_interfaces
+        ]
+    )
 
 
 class RutOSInterfaceSwitch(RutOSEntity, SwitchEntity):

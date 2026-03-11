@@ -263,10 +263,10 @@ class RutOSAPI:
                     "id": entry.get("id", ""),
                     "interface": entry.get("interface", ""),
                     "enabled": entry.get("enabled", False),
-                    "data_limit": entry.get("data_limit", 0),
-                    "data_used": entry.get("data_used", 0),
+                    "data_limit": int(entry.get("data_limit", 0)),
+                    "data_used": int(entry.get("data_used", 0)),
                     "data_warning_enabled": entry.get("data_warning_enabled", False),
-                    "data_warning_limit": entry.get("data_warning_limit", 0),
+                    "data_warning_limit": int(entry.get("data_warning_limit", 0)),
                     "due_reset_time": entry.get("due_reset_time"),
                 }
             )

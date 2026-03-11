@@ -752,6 +752,32 @@ class TestGetDataLimit:
             assert result[0]["data_used"] == 2500000000
             assert result[0]["data_limit"] == 5000000000
 
+    async def test_get_data_limit_converts_string_values(self, api_client):
+        """Test that string numeric values from API are converted to int."""
+        data = [
+            {
+                "id": "limit1",
+                "interface": "mob1s1a1",
+                "enabled": True,
+                "data_limit": "5000000000",
+                "data_used": "2500000000",
+                "data_warning_enabled": True,
+                "data_warning_limit": "4000000000",
+                "due_reset_time": 1735689600,
+            },
+        ]
+        with aioresponses() as m:
+            m.post(_url("/login"), payload=_login_success())
+            m.get(_url("/data_limit/status"), payload=_success(data))
+
+            result = await api_client.get_data_limit()
+
+            assert result[0]["data_used"] == 2500000000
+            assert result[0]["data_limit"] == 5000000000
+            assert result[0]["data_warning_limit"] == 4000000000
+            assert isinstance(result[0]["data_used"], int)
+            assert isinstance(result[0]["data_limit"], int)
+
     async def test_get_data_limit_empty(self, api_client):
         """Test returns empty list when no limits configured."""
         with aioresponses() as m:

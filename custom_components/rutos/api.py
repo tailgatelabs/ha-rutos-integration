@@ -69,7 +69,11 @@ class RutOSAPI:
             headers = self._auth_headers()
             try:
                 async with self._session.request(
-                    method, url, json=json_data, headers=headers, ssl=False,
+                    method,
+                    url,
+                    json=json_data,
+                    headers=headers,
+                    ssl=False,
                 ) as resp:
                     status = resp.status
                     try:
@@ -120,7 +124,9 @@ class RutOSAPI:
         payload = {"username": self._username, "password": self._password}
         try:
             async with self._session.post(
-                url, json=payload, ssl=False,
+                url,
+                json=payload,
+                ssl=False,
             ) as resp:
                 status = resp.status
                 try:
@@ -136,11 +142,7 @@ class RutOSAPI:
 
         if not isinstance(data, dict) or not data.get("success", False):
             errors = data.get("errors", []) if isinstance(data, dict) else []
-            msg = (
-                errors[0].get("error", "Login failed")
-                if errors
-                else "Login failed"
-            )
+            msg = errors[0].get("error", "Login failed") if errors else "Login failed"
             raise RutOSAuthError(msg)
 
         token_data = data.get("data", {})
@@ -189,9 +191,7 @@ class RutOSAPI:
         static = data.get("static", {})
         if static:
             info["firmware"] = static.get("fw_version", "")
-            info["model"] = (
-                static.get("device_name", "") or static.get("model", "")
-            )
+            info["model"] = static.get("device_name", "") or static.get("model", "")
             info["hostname"] = static.get("hostname", "")
 
         return info
@@ -211,17 +211,19 @@ class RutOSAPI:
             ipv4_addrs = iface.get("ipv4-address", [])
             ip_addr = ipv4_addrs[0].get("address") if ipv4_addrs else None
 
-            interfaces.append({
-                "name": iface.get("id", ""),
-                "enabled": iface.get("is_up", False),
-                "status": "up" if iface.get("is_up") else "down",
-                "ip_address": ip_addr,
-                "proto": iface.get("proto", ""),
-                "uptime": iface.get("uptime", 0),
-                "metric": iface.get("metric", 0),
-                "device": iface.get("device", ""),
-                "l3_device": iface.get("l3_device", ""),
-            })
+            interfaces.append(
+                {
+                    "name": iface.get("id", ""),
+                    "enabled": iface.get("is_up", False),
+                    "status": "up" if iface.get("is_up") else "down",
+                    "ip_address": ip_addr,
+                    "proto": iface.get("proto", ""),
+                    "uptime": iface.get("uptime", 0),
+                    "metric": iface.get("metric", 0),
+                    "device": iface.get("device", ""),
+                    "l3_device": iface.get("l3_device", ""),
+                }
+            )
 
         interfaces.sort(key=lambda x: x.get("metric", 0))
         return interfaces
@@ -235,9 +237,7 @@ class RutOSAPI:
         except RutOSAPIError:
             return False
 
-    async def set_interface_enabled(
-        self, interface: str, enabled: bool
-    ) -> None:
+    async def set_interface_enabled(self, interface: str, enabled: bool) -> None:
         """Enable or disable a network interface."""
         await self.put(
             f"/interfaces/config/{interface}",
@@ -258,16 +258,18 @@ class RutOSAPI:
         for entry in data:
             if not isinstance(entry, dict):
                 continue
-            limits.append({
-                "id": entry.get("id", ""),
-                "interface": entry.get("interface", ""),
-                "enabled": entry.get("enabled", False),
-                "data_limit": entry.get("data_limit", 0),
-                "data_used": entry.get("data_used", 0),
-                "data_warning_enabled": entry.get("data_warning_enabled", False),
-                "data_warning_limit": entry.get("data_warning_limit", 0),
-                "due_reset_time": entry.get("due_reset_time"),
-            })
+            limits.append(
+                {
+                    "id": entry.get("id", ""),
+                    "interface": entry.get("interface", ""),
+                    "enabled": entry.get("enabled", False),
+                    "data_limit": entry.get("data_limit", 0),
+                    "data_used": entry.get("data_used", 0),
+                    "data_warning_enabled": entry.get("data_warning_enabled", False),
+                    "data_warning_limit": entry.get("data_warning_limit", 0),
+                    "due_reset_time": entry.get("due_reset_time"),
+                }
+            )
         return limits
 
     async def clear_data_usage(self) -> None:
@@ -309,16 +311,18 @@ class RutOSAPI:
             if not isinstance(modem, dict):
                 continue
             modem_id = modem.get("id", "")
-            modems.append({
-                "id": modem_id,
-                "rssi": modem.get("rssi"),
-                "rsrp": modem.get("rsrp"),
-                "rsrq": modem.get("rsrq"),
-                "sinr": modem.get("sinr"),
-                "network_type": modem.get("network_type"),
-                "band": modem.get("band"),
-                "channel_number": modem.get("channel_number"),
-            })
+            modems.append(
+                {
+                    "id": modem_id,
+                    "rssi": modem.get("rssi"),
+                    "rsrp": modem.get("rsrp"),
+                    "rsrq": modem.get("rsrq"),
+                    "sinr": modem.get("sinr"),
+                    "network_type": modem.get("network_type"),
+                    "band": modem.get("band"),
+                    "channel_number": modem.get("channel_number"),
+                }
+            )
         return modems
 
     async def set_failover_order(self, interfaces: list[str]) -> None:

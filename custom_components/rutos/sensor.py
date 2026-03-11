@@ -86,6 +86,14 @@ GPS_SENSORS: tuple[RutOSSensorEntityDescription, ...] = (
         translation_key="gps_fix_status",
         value_fn=lambda gps: gps.get("fix_status"),
     ),
+    RutOSSensorEntityDescription(
+        key="gps_accuracy",
+        translation_key="gps_accuracy",
+        native_unit_of_measurement="m",
+        device_class=SensorDeviceClass.DISTANCE,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda gps: gps.get("accuracy"),
+    ),
 )
 
 
@@ -176,9 +184,7 @@ async def async_setup_entry(
         for description in INTERFACE_SENSORS
     ]
     entities.append(RutOSActiveWANSensor(coordinator))
-    entities.extend(
-        RutOSGPSSensorEntity(coordinator, desc) for desc in GPS_SENSORS
-    )
+    entities.extend(RutOSGPSSensorEntity(coordinator, desc) for desc in GPS_SENSORS)
     for limit in coordinator.data.data_limit:
         limit_id = limit.get("id", "")
         if not limit.get("enabled"):
@@ -211,9 +217,7 @@ class RutOSSensorEntity(RutOSEntity, SensorEntity):
         super().__init__(coordinator)
         self.entity_description = description
         self._interface_name = interface_name
-        self._attr_unique_id = (
-            f"{coordinator.data.device_info.get('serial', '')}_{interface_name}_{description.key}"
-        )
+        self._attr_unique_id = f"{coordinator.data.device_info.get('serial', '')}_{interface_name}_{description.key}"
         self._attr_translation_placeholders = {"interface": interface_name}
 
     @property
@@ -266,9 +270,7 @@ class RutOSDataLimitSensor(RutOSEntity, SensorEntity):
         super().__init__(coordinator)
         self.entity_description = description
         self._limit_id = limit_id
-        self._attr_unique_id = (
-            f"{coordinator.data.device_info.get('serial', '')}_{limit_id}_{description.key}"
-        )
+        self._attr_unique_id = f"{coordinator.data.device_info.get('serial', '')}_{limit_id}_{description.key}"
         self._attr_translation_placeholders = {"limit": limit_id}
 
     def _find_limit(self) -> dict[str, Any] | None:
@@ -302,9 +304,7 @@ class RutOSModemSignalSensor(RutOSEntity, SensorEntity):
         super().__init__(coordinator)
         self.entity_description = description
         self._modem_id = modem_id
-        self._attr_unique_id = (
-            f"{coordinator.data.device_info.get('serial', '')}_{modem_id}_{description.key}"
-        )
+        self._attr_unique_id = f"{coordinator.data.device_info.get('serial', '')}_{modem_id}_{description.key}"
         self._attr_translation_placeholders = {"modem": modem_id}
 
     def _find_modem(self) -> dict[str, Any] | None:

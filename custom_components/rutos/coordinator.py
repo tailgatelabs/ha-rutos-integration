@@ -62,15 +62,20 @@ class RutOSDataUpdateCoordinator(DataUpdateCoordinator[RutOSData]):
             self.data = RutOSData()
 
         try:
-            wan_interfaces, internet_available, gps_position, data_limit, modem_signal, modems = (
-                await asyncio.gather(
-                    self.api.get_wan_interfaces(),
-                    self.api.get_internet_status(),
-                    self.api.get_gps_position(),
-                    self.api.get_data_limit(),
-                    self.api.get_modem_signal(),
-                    self.api.get_modems(),
-                )
+            (
+                wan_interfaces,
+                internet_available,
+                gps_position,
+                data_limit,
+                modem_signal,
+                modems,
+            ) = await asyncio.gather(
+                self.api.get_wan_interfaces(),
+                self.api.get_internet_status(),
+                self.api.get_gps_position(),
+                self.api.get_data_limit(),
+                self.api.get_modem_signal(),
+                self.api.get_modems(),
             )
         except RutOSAuthError as err:
             raise UpdateFailed(f"Authentication failed: {err}") from err

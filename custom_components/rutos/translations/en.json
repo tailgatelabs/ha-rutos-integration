@@ -46,6 +46,12 @@
       "active_wan": {
         "name": "Active WAN interface"
       },
+      "gps_latitude": {
+        "name": "GPS latitude"
+      },
+      "gps_longitude": {
+        "name": "GPS longitude"
+      },
       "gps_speed": {
         "name": "GPS speed"
       },

@@ -22,8 +22,9 @@ failover control.
 - **WAN Interface Switches** — Enable/disable individual WAN interfaces
 - **Failover Ordering** — Service call to reorder WAN interface failover
   priority
-- **GPS Tracking** — Device tracker with real-time location on the HA map, plus
-  sensors for speed, altitude, heading, satellites, and fix status
+- **GPS Tracking** — Sensors for speed, altitude, heading, satellites, accuracy,
+  and fix status, with optional automatic updates to the Home Assistant home
+  location
 - **Data Usage** — Data used, data limit, and usage percentage for each
   configured data limit, plus a button to reset usage counters
 - **Cellular Signal** — RSSI, RSRP, RSRQ, SINR, network type, and band for each
@@ -73,6 +74,56 @@ data:
 ```
 
 The first interface in the list gets the highest priority.
+
+## GPS & Home Location
+
+The integration fetches GPS data from the router's `/gps/position/status`
+endpoint every 30 seconds. Eight GPS sensors are created automatically:
+
+| Sensor         | Description                  |
+| -------------- | ---------------------------- |
+| GPS Latitude   | Current latitude (°)         |
+| GPS Longitude  | Current longitude (°)        |
+| GPS Speed      | Current speed (km/h)         |
+| GPS Altitude   | Altitude above sea level (m) |
+| GPS Heading    | Direction of travel (°)      |
+| GPS Satellites | Number of visible satellites |
+| GPS Fix Status | Fix type (e.g., "2D", "3D")  |
+| GPS Accuracy   | Position accuracy (m)        |
+
+### Home Location Updates
+
+When enabled (the default), the integration automatically updates your Home
+Assistant home zone coordinates using the router's GPS position. This is useful
+for mobile installations (RVs, boats, etc.) where "home" moves with you.
+
+To toggle this setting: go to **Settings** > **Devices & services** >
+**RutOS** > **Configure** and check or uncheck **Update Home Assistant home
+location from GPS**.
+
+### Verifying GPS Data
+
+1. **Check that the router has a GPS fix.** Open the router's web UI and confirm
+   GPS status shows a valid fix (2D or 3D). The router needs a clear view of the
+   sky for satellite reception.
+2. **Inspect the GPS sensors in Home Assistant.** Go to **Developer Tools** >
+   **States** and filter for `sensor.rutos_gps_`. Confirm the sensors show
+   numeric values (not `unknown` or `unavailable`). If they show `unknown`, the
+   router is not returning GPS data — verify the GPS antenna is connected and
+   the router has a fix.
+3. **Verify home location is updating.** Go to **Settings** > **Home Zone** (or
+   **Developer Tools** > **States** and search for `zone.home`). The latitude
+   and longitude should match the values from the GPS speed/altitude sensors'
+   device page. After the next 30-second polling cycle, the home zone
+   coordinates should reflect the router's GPS position.
+4. **Check the integration log.** If GPS data is not appearing, enable debug
+   logging by adding the following to `configuration.yaml` and restarting:
+   ```yaml
+   logger:
+     logs:
+       custom_components.rutos: debug
+   ```
+   Look for GPS-related log entries under **Settings** > **System** > **Logs**.
 
 ## Requirements
 

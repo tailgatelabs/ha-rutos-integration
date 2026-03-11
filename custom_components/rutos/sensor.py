@@ -54,6 +54,20 @@ INTERFACE_SENSORS: tuple[RutOSSensorEntityDescription, ...] = (
 
 GPS_SENSORS: tuple[RutOSSensorEntityDescription, ...] = (
     RutOSSensorEntityDescription(
+        key="gps_latitude",
+        translation_key="gps_latitude",
+        native_unit_of_measurement="°",
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda gps: gps.get("latitude"),
+    ),
+    RutOSSensorEntityDescription(
+        key="gps_longitude",
+        translation_key="gps_longitude",
+        native_unit_of_measurement="°",
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda gps: gps.get("longitude"),
+    ),
+    RutOSSensorEntityDescription(
         key="gps_speed",
         translation_key="gps_speed",
         native_unit_of_measurement="km/h",

@@ -29,6 +29,9 @@ failover control.
   configured data limit, plus a button to reset usage counters
 - **Cellular Signal** — RSSI, RSRP, RSRQ, SINR, network type, and band for each
   modem
+- **Mobile Operator** — Current carrier name for each modem (e.g., "Bell",
+  "T-Mobile")
+- **Modem Roaming** — Binary sensor indicating whether each modem is roaming
 - **Modem Reboot** — Button to reboot individual modems without rebooting the
   entire device
 
@@ -124,6 +127,127 @@ location from GPS**.
        custom_components.rutos: debug
    ```
    Look for GPS-related log entries under **Settings** > **System** > **Logs**.
+
+## Entities Reference
+
+### Sensors
+
+| Entity                   | Description                                 | Unit |
+| ------------------------ | ------------------------------------------- | ---- |
+| `{interface} status`     | WAN interface status (up/down)              | —    |
+| `{interface} IP address` | WAN interface IPv4 address                  | —    |
+| `{interface} protocol`   | WAN interface protocol (dhcp, wwan, static) | —    |
+| `{interface} uptime`     | WAN interface uptime                        | s    |
+| `Active WAN interface`   | Name of the currently active WAN interface  | —    |
+| `{modem} RSSI`           | Received Signal Strength Indicator          | dBm  |
+| `{modem} RSRP`           | Reference Signal Received Power             | dBm  |
+| `{modem} RSRQ`           | Reference Signal Received Quality           | dB   |
+| `{modem} SINR`           | Signal-to-Interference-plus-Noise Ratio     | dB   |
+| `{modem} network type`   | Network technology (LTE, 5G, etc.)          | —    |
+| `{modem} band`           | Operating frequency band                    | —    |
+| `{modem} operator`       | Mobile network operator name                | —    |
+| `{limit} data used`      | Total data consumed                         | B    |
+| `{limit} data limit`     | Configured data cap                         | B    |
+| `{limit} data usage`     | Usage as percentage of limit                | %    |
+
+### Binary Sensors
+
+| Entity                  | Description                            |
+| ----------------------- | -------------------------------------- |
+| `Internet connectivity` | Whether the router has internet access |
+| `{modem} roaming`       | Whether the modem is currently roaming |
+
+### Switches
+
+| Entity                | Description                       |
+| --------------------- | --------------------------------- |
+| `{interface} enabled` | Enable or disable a WAN interface |
+
+### Buttons
+
+| Entity             | Description                |
+| ------------------ | -------------------------- |
+| `Clear data usage` | Reset data usage counters  |
+| `Reboot {modem}`   | Reboot an individual modem |
+
+## Automation Examples
+
+### Starlink Failover
+
+This automation uses the **internet connectivity** binary sensor to detect when
+the router's primary connection has been down for 2 minutes, then automatically
+powers on a Starlink dish as a backup and sends a push notification.
+
+```yaml
+alias: Starlink Failover
+description: >-
+  Turn on Starlink power if internet connectivity has been down for 120 seconds,
+  and send a notification
+mode: single
+triggers:
+  - entity_id: binary_sensor.router_internet_connectivity
+    to: "off"
+    for:
+      seconds: 120
+    trigger: state
+conditions:
+  - condition: state
+    entity_id: switch.starlink_power
+    state: "off"
+actions:
+  - target:
+      entity_id: switch.starlink_power
+    action: switch.turn_on
+  - action: notify.mobile_app_phone
+    data:
+      title: Starlink Failover
+      message: >-
+        Internet down for 2 minutes. Starlink power has been turned on.
+      data:
+        push:
+          interruption-level: time-sensitive
+```
+
+### Data Usage Alert
+
+Send a notification when cellular data usage exceeds 80%.
+
+```yaml
+alias: Data Usage Warning
+triggers:
+  - entity_id: sensor.router_mob1s1a1_data_usage
+    above: 80
+    trigger: numeric_state
+actions:
+  - action: notify.mobile_app_phone
+    data:
+      title: Data Usage Warning
+      message: >-
+        Cellular data usage is at {{ states('sensor.router_mob1s1a1_data_usage')
+        }}%
+```
+
+### Reorder Failover on WAN Change
+
+Automatically adjust failover priority when the active WAN interface changes.
+
+```yaml
+alias: Reorder Failover on WAN Change
+triggers:
+  - entity_id: sensor.router_active_wan_interface
+    trigger: state
+conditions:
+  - condition: state
+    entity_id: sensor.router_active_wan_interface
+    state: wan1
+actions:
+  - action: rutos.set_failover_order
+    data:
+      interfaces:
+        - wan1
+        - mob1s1a1
+        - wan3
+```
 
 ## Requirements
 

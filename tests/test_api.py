@@ -944,3 +944,76 @@ class TestGetModemSignal:
 
             result = await api_client.get_modem_signal()
             assert result == []
+
+
+class TestGetModemStatus:
+    """Tests for get_modem_status."""
+
+    async def test_get_modem_status_home(self, api_client):
+        """Test parsing of modem status response with home network."""
+        status_data = [
+            {
+                "id": "2-1",
+                "operator": "Bell",
+                "operator_state": "Registered, home",
+            },
+        ]
+        with aioresponses() as m:
+            m.post(_url("/login"), payload=_login_success())
+            m.get(_url("/modems/status"), payload=_success(status_data))
+
+            result = await api_client.get_modem_status()
+
+            assert len(result) == 1
+            assert result[0]["id"] == "2-1"
+            assert result[0]["operator"] == "Bell"
+            assert result[0]["roaming"] is False
+
+    async def test_get_modem_status_roaming(self, api_client):
+        """Test roaming detection from operator_state."""
+        status_data = [
+            {
+                "id": "2-1",
+                "operator": "AT&T",
+                "operator_state": "Registered, roaming",
+            },
+        ]
+        with aioresponses() as m:
+            m.post(_url("/login"), payload=_login_success())
+            m.get(_url("/modems/status"), payload=_success(status_data))
+
+            result = await api_client.get_modem_status()
+
+            assert len(result) == 1
+            assert result[0]["operator"] == "AT&T"
+            assert result[0]["roaming"] is True
+
+    async def test_get_modem_status_empty(self, api_client):
+        """Test returns empty list when no modems."""
+        with aioresponses() as m:
+            m.post(_url("/login"), payload=_login_success())
+            m.get(_url("/modems/status"), payload=_success([]))
+
+            result = await api_client.get_modem_status()
+            assert result == []
+
+    async def test_get_modem_status_api_error(self, api_client):
+        """Test returns empty list on API error."""
+        with aioresponses() as m:
+            m.post(_url("/login"), payload=_login_success())
+            m.get(
+                _url("/modems/status"),
+                payload=_error("Service unavailable"),
+            )
+
+            result = await api_client.get_modem_status()
+            assert result == []
+
+    async def test_get_modem_status_non_list(self, api_client):
+        """Test returns empty list for non-list response."""
+        with aioresponses() as m:
+            m.post(_url("/login"), payload=_login_success())
+            m.get(_url("/modems/status"), payload=_success({"unexpected": True}))
+
+            result = await api_client.get_modem_status()
+            assert result == []

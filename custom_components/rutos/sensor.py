@@ -184,6 +184,14 @@ MODEM_SIGNAL_SENSORS: tuple[RutOSSensorEntityDescription, ...] = (
     ),
 )
 
+MODEM_STATUS_SENSORS: tuple[RutOSSensorEntityDescription, ...] = (
+    RutOSSensorEntityDescription(
+        key="operator",
+        translation_key="modem_operator",
+        value_fn=lambda m: m.get("operator"),
+    ),
+)
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -212,6 +220,12 @@ async def async_setup_entry(
         entities.extend(
             RutOSModemSignalSensor(coordinator, desc, modem_id)
             for desc in MODEM_SIGNAL_SENSORS
+        )
+    for modem in coordinator.data.modem_status:
+        modem_id = modem.get("id", "")
+        entities.extend(
+            RutOSModemStatusSensor(coordinator, desc, modem_id)
+            for desc in MODEM_STATUS_SENSORS
         )
     async_add_entities(entities)
 
@@ -324,6 +338,40 @@ class RutOSModemSignalSensor(RutOSEntity, SensorEntity):
     def _find_modem(self) -> dict[str, Any] | None:
         """Find modem data by id."""
         for modem in self.coordinator.data.modem_signal:
+            if modem.get("id") == self._modem_id:
+                return modem
+        return None
+
+    @property
+    def native_value(self) -> str | int | float | None:
+        """Return the sensor value."""
+        modem = self._find_modem()
+        if modem is None:
+            return None
+        return self.entity_description.value_fn(modem)
+
+
+class RutOSModemStatusSensor(RutOSEntity, SensorEntity):
+    """Representation of a RutOS modem status sensor."""
+
+    entity_description: RutOSSensorEntityDescription
+
+    def __init__(
+        self,
+        coordinator: RutOSDataUpdateCoordinator,
+        description: RutOSSensorEntityDescription,
+        modem_id: str,
+    ) -> None:
+        """Initialize the modem status sensor."""
+        super().__init__(coordinator)
+        self.entity_description = description
+        self._modem_id = modem_id
+        self._attr_unique_id = f"{coordinator.data.device_info.get('serial', '')}_{modem_id}_{description.key}"
+        self._attr_translation_placeholders = {"modem": modem_id}
+
+    def _find_modem(self) -> dict[str, Any] | None:
+        """Find modem data by id."""
+        for modem in self.coordinator.data.modem_status:
             if modem.get("id") == self._modem_id:
                 return modem
         return None

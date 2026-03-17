@@ -96,6 +96,9 @@
       },
       "modem_band": {
         "name": "{modem} band"
+      },
+      "modem_operator": {
+        "name": "{modem} operator"
       }
     },
     "button": {
@@ -109,6 +112,9 @@
     "binary_sensor": {
       "internet_connectivity": {
         "name": "Internet connectivity"
+      },
+      "modem_roaming": {
+        "name": "{modem} roaming"
       }
     },
     "switch": {

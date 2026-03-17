@@ -12,10 +12,12 @@ from custom_components.rutos.sensor import (
     DATA_LIMIT_SENSORS,
     INTERFACE_SENSORS,
     MODEM_SIGNAL_SENSORS,
+    MODEM_STATUS_SENSORS,
     RutOSActiveWANSensor,
     RutOSGPSSensorEntity,
     RutOSDataLimitSensor,
     RutOSModemSignalSensor,
+    RutOSModemStatusSensor,
     RutOSSensorEntity,
 )
 
@@ -333,3 +335,31 @@ class TestRutOSModemSignalSensor:
         desc = MODEM_SIGNAL_SENSORS[0]
         sensor = RutOSModemSignalSensor(mock_coordinator, desc, "modem1")
         assert sensor.unique_id == "1234567890_modem1_rssi"
+
+
+class TestRutOSModemStatusSensor:
+    """Tests for modem status (operator) sensor entities."""
+
+    def test_operator_value(
+        self, mock_coordinator: RutOSDataUpdateCoordinator
+    ):
+        """Test operator sensor returns carrier name."""
+        desc = MODEM_STATUS_SENSORS[0]  # operator
+        sensor = RutOSModemStatusSensor(mock_coordinator, desc, "modem1")
+        assert sensor.native_value == "T-Mobile"
+
+    def test_missing_modem_returns_none(
+        self, mock_coordinator: RutOSDataUpdateCoordinator
+    ):
+        """Test returns None when modem not found."""
+        desc = MODEM_STATUS_SENSORS[0]
+        sensor = RutOSModemStatusSensor(mock_coordinator, desc, "nonexistent")
+        assert sensor.native_value is None
+
+    def test_unique_id_format(
+        self, mock_coordinator: RutOSDataUpdateCoordinator
+    ):
+        """Test unique_id follows {serial}_{modem}_{key} pattern."""
+        desc = MODEM_STATUS_SENSORS[0]
+        sensor = RutOSModemStatusSensor(mock_coordinator, desc, "modem1")
+        assert sensor.unique_id == "1234567890_modem1_operator"

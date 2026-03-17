@@ -21,7 +21,11 @@ async def async_setup_entry(
 ) -> None:
     """Set up RutOS binary sensors based on a config entry."""
     coordinator: RutOSDataUpdateCoordinator = entry.runtime_data
-    async_add_entities([RutOSInternetConnectivitySensor(coordinator)])
+    entities: list[BinarySensorEntity] = [RutOSInternetConnectivitySensor(coordinator)]
+    for modem in coordinator.data.modem_status:
+        modem_id = modem.get("id", "")
+        entities.append(RutOSModemRoamingSensor(coordinator, modem_id))
+    async_add_entities(entities)
 
 
 class RutOSInternetConnectivitySensor(RutOSEntity, BinarySensorEntity):
@@ -41,3 +45,26 @@ class RutOSInternetConnectivitySensor(RutOSEntity, BinarySensorEntity):
     def is_on(self) -> bool:
         """Return true if internet is available."""
         return self.coordinator.data.internet_available
+
+
+class RutOSModemRoamingSensor(RutOSEntity, BinarySensorEntity):
+    """Binary sensor for modem roaming status."""
+
+    _attr_translation_key = "modem_roaming"
+
+    def __init__(self, coordinator: RutOSDataUpdateCoordinator, modem_id: str) -> None:
+        """Initialize the roaming binary sensor."""
+        super().__init__(coordinator)
+        self._modem_id = modem_id
+        self._attr_unique_id = (
+            f"{coordinator.data.device_info.get('serial', '')}_{modem_id}_roaming"
+        )
+        self._attr_translation_placeholders = {"modem": modem_id}
+
+    @property
+    def is_on(self) -> bool | None:
+        """Return true if modem is roaming."""
+        for modem in self.coordinator.data.modem_status:
+            if modem.get("id") == self._modem_id:
+                return modem.get("roaming")
+        return None

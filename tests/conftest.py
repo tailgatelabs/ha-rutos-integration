@@ -112,13 +112,19 @@ def mock_modem_signal() -> list[dict]:
 
 
 @pytest.fixture
+def mock_modem_status() -> list[dict]:
+    """Return mock modem status data."""
+    return [{"id": "modem1", "operator": "T-Mobile", "roaming": False}]
+
+
+@pytest.fixture
 def mock_modems() -> list[dict]:
     """Return mock modem list."""
     return [{"id": "modem1"}]
 
 
 @pytest.fixture
-def mock_rutos_data(mock_device_info, mock_wan_interfaces, mock_gps_position, mock_data_limit, mock_modem_signal, mock_modems) -> RutOSData:
+def mock_rutos_data(mock_device_info, mock_wan_interfaces, mock_gps_position, mock_data_limit, mock_modem_signal, mock_modem_status, mock_modems) -> RutOSData:
     """Return a populated RutOSData instance."""
     return RutOSData(
         device_info=mock_device_info,
@@ -127,6 +133,7 @@ def mock_rutos_data(mock_device_info, mock_wan_interfaces, mock_gps_position, mo
         gps_position=mock_gps_position,
         data_limit=mock_data_limit,
         modem_signal=mock_modem_signal,
+        modem_status=mock_modem_status,
         modems=mock_modems,
     )
 
@@ -173,6 +180,9 @@ def mock_api(mock_device_info, mock_wan_interfaces) -> AsyncMock:
             "band": "B7",
             "channel_number": 3100,
         },
+    ]
+    api.get_modem_status.return_value = [
+        {"id": "modem1", "operator": "T-Mobile", "roaming": False},
     ]
     api.get_modems.return_value = [{"id": "modem1"}]
     api.reboot_modem.return_value = None

@@ -12,10 +12,10 @@ from homeassistant.components.sensor import (
     SensorEntityDescription,
     SensorStateClass,
 )
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
+from . import RutOSConfigEntry
 from .coordinator import RutOSDataUpdateCoordinator
 from .entity import RutOSEntity
 
@@ -195,7 +195,7 @@ MODEM_STATUS_SENSORS: tuple[RutOSSensorEntityDescription, ...] = (
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: ConfigEntry,
+    entry: RutOSConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up RutOS sensors based on a config entry."""

@@ -7,11 +7,10 @@ from unittest.mock import AsyncMock, call, patch
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 
+from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_USERNAME
+
 from custom_components.rutos.const import (
-    CONF_HOST,
-    CONF_PASSWORD,
     CONF_UPDATE_HOME_LOCATION,
-    CONF_USERNAME,
     DOMAIN,
 )
 from custom_components.rutos.coordinator import RutOSDataUpdateCoordinator
@@ -53,9 +52,7 @@ MOCK_GPS_POSITION = {
 }
 
 
-def _create_entry(
-    hass: HomeAssistant, options: dict | None = None
-) -> MockConfigEntry:
+def _create_entry(hass: HomeAssistant, options: dict | None = None) -> MockConfigEntry:
     """Create and add a mock config entry."""
     entry = MockConfigEntry(
         domain=DOMAIN,

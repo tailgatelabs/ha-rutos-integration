@@ -8,19 +8,18 @@ from typing import Any
 import voluptuous as vol
 
 from homeassistant.config_entries import (
+    ConfigEntry,
     ConfigFlow,
     ConfigFlowResult,
     OptionsFlow,
 )
+from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_USERNAME
 from homeassistant.core import callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import RutOSAPI, RutOSAuthError, RutOSConnectionError
 from .const import (
-    CONF_HOST,
-    CONF_PASSWORD,
     CONF_UPDATE_HOME_LOCATION,
-    CONF_USERNAME,
     DEFAULT_USERNAME,
     DOMAIN,
 )
@@ -44,7 +43,7 @@ class RutOSConfigFlow(ConfigFlow, domain=DOMAIN):
     @staticmethod
     @callback
     def async_get_options_flow(
-        config_entry: ConfigFlow,
+        config_entry: ConfigEntry,
     ) -> RutOSOptionsFlowHandler:
         """Get the options flow for this handler."""
         return RutOSOptionsFlowHandler()

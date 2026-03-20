@@ -10,11 +10,10 @@ from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 
 from custom_components.rutos.api import RutOSAuthError
+from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_USERNAME
+
 from custom_components.rutos.const import (
     ATTR_INTERFACES,
-    CONF_HOST,
-    CONF_PASSWORD,
-    CONF_USERNAME,
     DOMAIN,
     SERVICE_SET_FAILOVER_ORDER,
 )
@@ -84,9 +83,7 @@ async def test_async_setup_entry_success(
     """Test successful setup stores coordinator and forwards platforms."""
     entry = _create_entry(hass)
 
-    with patch(
-        "custom_components.rutos.RutOSAPI", return_value=mock_api_instance
-    ):
+    with patch("custom_components.rutos.RutOSAPI", return_value=mock_api_instance):
         result = await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
 
@@ -103,24 +100,18 @@ async def test_async_setup_entry_auth_failure(
     mock_api_instance.get_device_info.side_effect = RutOSAuthError("bad creds")
     entry = _create_entry(hass)
 
-    with patch(
-        "custom_components.rutos.RutOSAPI", return_value=mock_api_instance
-    ):
+    with patch("custom_components.rutos.RutOSAPI", return_value=mock_api_instance):
         await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
 
     assert entry.state is ConfigEntryState.SETUP_RETRY
 
 
-async def test_async_unload_entry(
-    hass: HomeAssistant, mock_api_instance: AsyncMock
-):
+async def test_async_unload_entry(hass: HomeAssistant, mock_api_instance: AsyncMock):
     """Test unloading an entry returns True."""
     entry = _create_entry(hass)
 
-    with patch(
-        "custom_components.rutos.RutOSAPI", return_value=mock_api_instance
-    ):
+    with patch("custom_components.rutos.RutOSAPI", return_value=mock_api_instance):
         await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
         result = await hass.config_entries.async_unload(entry.entry_id)
@@ -135,9 +126,7 @@ async def test_set_failover_order_service_registered(
     """Test the set_failover_order service exists after setup."""
     entry = _create_entry(hass)
 
-    with patch(
-        "custom_components.rutos.RutOSAPI", return_value=mock_api_instance
-    ):
+    with patch("custom_components.rutos.RutOSAPI", return_value=mock_api_instance):
         await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
 
@@ -150,9 +139,7 @@ async def test_set_failover_order_service_call(
     """Test service call invokes API and triggers refresh."""
     entry = _create_entry(hass)
 
-    with patch(
-        "custom_components.rutos.RutOSAPI", return_value=mock_api_instance
-    ):
+    with patch("custom_components.rutos.RutOSAPI", return_value=mock_api_instance):
         await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
 
@@ -174,9 +161,7 @@ async def test_register_services_idempotent(
 
     entry = _create_entry(hass)
 
-    with patch(
-        "custom_components.rutos.RutOSAPI", return_value=mock_api_instance
-    ):
+    with patch("custom_components.rutos.RutOSAPI", return_value=mock_api_instance):
         await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
 

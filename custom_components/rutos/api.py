@@ -128,7 +128,6 @@ class RutOSAPI:
                 json=payload,
                 ssl=False,
             ) as resp:
-                status = resp.status
                 try:
                     data = await resp.json(content_type=None)
                 except (ValueError, aiohttp.ContentTypeError):

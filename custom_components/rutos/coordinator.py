@@ -6,8 +6,9 @@ import asyncio
 from dataclasses import dataclass, field
 from datetime import timedelta
 import logging
-from typing import Any
+from typing import Any, cast
 
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
@@ -34,11 +35,12 @@ class RutOSData:
 class RutOSDataUpdateCoordinator(DataUpdateCoordinator[RutOSData]):
     """Coordinator to manage fetching RutOS data."""
 
-    def __init__(self, hass: HomeAssistant, api: RutOSAPI) -> None:
+    def __init__(self, hass: HomeAssistant, entry: ConfigEntry, api: RutOSAPI) -> None:
         """Initialize the coordinator."""
         super().__init__(
             hass,
             _LOGGER,
+            config_entry=entry,
             name=DOMAIN,
             update_interval=timedelta(seconds=DEFAULT_SCAN_INTERVAL),
         )
@@ -62,34 +64,40 @@ class RutOSDataUpdateCoordinator(DataUpdateCoordinator[RutOSData]):
         if self.data is None:
             self.data = RutOSData()
 
+        _ResultT = tuple[
+            list[dict[str, Any]],
+            bool,
+            dict[str, Any] | None,
+            list[dict[str, Any]],
+            list[dict[str, Any]],
+            list[dict[str, Any]],
+            list[dict[str, Any]],
+        ]
         try:
-            (
-                wan_interfaces,
-                internet_available,
-                gps_position,
-                data_limit,
-                modem_signal,
-                modem_status,
-                modems,
-            ) = await asyncio.gather(
-                self.api.get_wan_interfaces(),
-                self.api.get_internet_status(),
-                self.api.get_gps_position(),
-                self.api.get_data_limit(),
-                self.api.get_modem_signal(),
-                self.api.get_modem_status(),
-                self.api.get_modems(),
+            results = cast(
+                _ResultT,
+                await asyncio.gather(
+                    self.api.get_wan_interfaces(),
+                    self.api.get_internet_status(),
+                    self.api.get_gps_position(),
+                    self.api.get_data_limit(),
+                    self.api.get_modem_signal(),
+                    self.api.get_modem_status(),
+                    self.api.get_modems(),
+                ),
             )
         except RutOSAuthError as err:
             raise UpdateFailed(f"Authentication failed: {err}") from err
         except RutOSAPIError as err:
             raise UpdateFailed(f"Error communicating with API: {err}") from err
 
-        self.data.wan_interfaces = wan_interfaces
-        self.data.internet_available = internet_available
-        self.data.gps_position = gps_position
-        self.data.data_limit = data_limit
-        self.data.modem_signal = modem_signal
-        self.data.modem_status = modem_status
-        self.data.modems = modems
+        (
+            self.data.wan_interfaces,
+            self.data.internet_available,
+            self.data.gps_position,
+            self.data.data_limit,
+            self.data.modem_signal,
+            self.data.modem_status,
+            self.data.modems,
+        ) = results
         return self.data

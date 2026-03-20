@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
@@ -16,17 +17,17 @@ class RutOSEntity(CoordinatorEntity[RutOSDataUpdateCoordinator]):
     _attr_has_entity_name = True
 
     @property
-    def device_info(self) -> dict[str, Any]:
+    def device_info(self) -> DeviceInfo:
         """Return device info."""
         info = self.coordinator.data.device_info
         serial = info.get("serial", "")
-        return {
-            "identifiers": {(DOMAIN, serial)},
-            "name": info.get("model", "RutOS Device"),
-            "manufacturer": "Teltonika",
-            "model": info.get("name", ""),
-            "sw_version": info.get("firmware", ""),
-        }
+        return DeviceInfo(
+            identifiers={(DOMAIN, serial)},
+            name=info.get("model", "RutOS Device"),
+            manufacturer="Teltonika",
+            model=info.get("name", ""),
+            sw_version=info.get("firmware", ""),
+        )
 
     def _find_interface(self, interface_name: str) -> dict[str, Any] | None:
         """Find a WAN interface by name, or return None."""

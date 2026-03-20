@@ -6,17 +6,17 @@ from homeassistant.components.binary_sensor import (
     BinarySensorDeviceClass,
     BinarySensorEntity,
 )
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
+from . import RutOSConfigEntry
 from .coordinator import RutOSDataUpdateCoordinator
 from .entity import RutOSEntity
 
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: ConfigEntry,
+    entry: RutOSConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up RutOS binary sensors based on a config entry."""

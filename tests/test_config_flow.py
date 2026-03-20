@@ -4,22 +4,19 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, patch
 
-import pytest
 
 from homeassistant import config_entries
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 
 from custom_components.rutos.api import RutOSAuthError, RutOSConnectionError
+from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_USERNAME
+
 from custom_components.rutos.const import (
-    CONF_HOST,
-    CONF_PASSWORD,
     CONF_UPDATE_HOME_LOCATION,
-    CONF_USERNAME,
     DOMAIN,
 )
 
-from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 USER_INPUT = {
     CONF_HOST: "192.168.1.1",
@@ -50,9 +47,7 @@ async def test_form_shown_on_init(hass: HomeAssistant):
 async def test_successful_config_flow(hass: HomeAssistant):
     """Test a complete successful config flow creates an entry."""
     with (
-        patch(
-            "custom_components.rutos.config_flow.RutOSAPI"
-        ) as mock_api_cls,
+        patch("custom_components.rutos.config_flow.RutOSAPI") as mock_api_cls,
         patch("custom_components.rutos.async_setup_entry", return_value=True),
     ):
         mock_api = AsyncMock()
@@ -75,9 +70,7 @@ async def test_successful_config_flow(hass: HomeAssistant):
 
 async def test_invalid_auth_error(hass: HomeAssistant):
     """Test RutOSAuthError shows invalid_auth error."""
-    with patch(
-        "custom_components.rutos.config_flow.RutOSAPI"
-    ) as mock_api_cls:
+    with patch("custom_components.rutos.config_flow.RutOSAPI") as mock_api_cls:
         mock_api = AsyncMock()
         mock_api.login.side_effect = RutOSAuthError("bad password")
         mock_api_cls.return_value = mock_api
@@ -95,9 +88,7 @@ async def test_invalid_auth_error(hass: HomeAssistant):
 
 async def test_cannot_connect_error(hass: HomeAssistant):
     """Test RutOSConnectionError shows cannot_connect error."""
-    with patch(
-        "custom_components.rutos.config_flow.RutOSAPI"
-    ) as mock_api_cls:
+    with patch("custom_components.rutos.config_flow.RutOSAPI") as mock_api_cls:
         mock_api = AsyncMock()
         mock_api.login.side_effect = RutOSConnectionError("refused")
         mock_api_cls.return_value = mock_api
@@ -115,9 +106,7 @@ async def test_cannot_connect_error(hass: HomeAssistant):
 
 async def test_unknown_error(hass: HomeAssistant):
     """Test unexpected exception shows unknown error."""
-    with patch(
-        "custom_components.rutos.config_flow.RutOSAPI"
-    ) as mock_api_cls:
+    with patch("custom_components.rutos.config_flow.RutOSAPI") as mock_api_cls:
         mock_api = AsyncMock()
         mock_api.login.side_effect = RuntimeError("oops")
         mock_api_cls.return_value = mock_api
@@ -137,9 +126,7 @@ async def test_duplicate_device_aborts(hass: HomeAssistant, mock_config_entry):
     """Test same serial number aborts with already_configured."""
     mock_config_entry.add_to_hass(hass)
 
-    with patch(
-        "custom_components.rutos.config_flow.RutOSAPI"
-    ) as mock_api_cls:
+    with patch("custom_components.rutos.config_flow.RutOSAPI") as mock_api_cls:
         mock_api = AsyncMock()
         mock_api.login.return_value = None
         mock_api.get_device_info.return_value = DEVICE_INFO
@@ -165,9 +152,7 @@ async def test_no_serial_creates_entry_without_unique_id(hass: HomeAssistant):
     }
 
     with (
-        patch(
-            "custom_components.rutos.config_flow.RutOSAPI"
-        ) as mock_api_cls,
+        patch("custom_components.rutos.config_flow.RutOSAPI") as mock_api_cls,
         patch("custom_components.rutos.async_setup_entry", return_value=True),
     ):
         mock_api = AsyncMock()

@@ -9,7 +9,9 @@ import pytest
 from homeassistant.core import HomeAssistant
 
 from custom_components.rutos.api import RutOSAPI
-from custom_components.rutos.const import CONF_HOST, CONF_PASSWORD, CONF_USERNAME, DOMAIN
+from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_USERNAME
+
+from custom_components.rutos.const import DOMAIN
 from custom_components.rutos.coordinator import RutOSData, RutOSDataUpdateCoordinator
 
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -124,7 +126,15 @@ def mock_modems() -> list[dict]:
 
 
 @pytest.fixture
-def mock_rutos_data(mock_device_info, mock_wan_interfaces, mock_gps_position, mock_data_limit, mock_modem_signal, mock_modem_status, mock_modems) -> RutOSData:
+def mock_rutos_data(
+    mock_device_info,
+    mock_wan_interfaces,
+    mock_gps_position,
+    mock_data_limit,
+    mock_modem_signal,
+    mock_modem_status,
+    mock_modems,
+) -> RutOSData:
     """Return a populated RutOSData instance."""
     return RutOSData(
         device_info=mock_device_info,
@@ -210,9 +220,11 @@ def mock_config_entry() -> MockConfigEntry:
 def mock_coordinator(
     hass: HomeAssistant,
     mock_api: AsyncMock,
+    mock_config_entry: MockConfigEntry,
     mock_rutos_data: RutOSData,
 ) -> RutOSDataUpdateCoordinator:
     """Return a coordinator with mocked API and pre-populated data."""
-    coordinator = RutOSDataUpdateCoordinator(hass, mock_api)
+    mock_config_entry.add_to_hass(hass)
+    coordinator = RutOSDataUpdateCoordinator(hass, mock_config_entry, mock_api)
     coordinator.data = mock_rutos_data
     return coordinator

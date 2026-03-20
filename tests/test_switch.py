@@ -14,9 +14,7 @@ from custom_components.rutos.switch import RutOSInterfaceSwitch
 class TestRutOSInterfaceSwitch:
     """Tests for the WAN interface switch."""
 
-    def test_creates_per_interface(
-        self, mock_coordinator: RutOSDataUpdateCoordinator
-    ):
+    def test_creates_per_interface(self, mock_coordinator: RutOSDataUpdateCoordinator):
         """Test one switch is created per WAN interface."""
         switches = [
             RutOSInterfaceSwitch(mock_coordinator, iface["name"])
@@ -57,7 +55,9 @@ class TestRutOSInterfaceSwitch:
 
         await switch.async_turn_off()
 
-        mock_coordinator.api.set_interface_enabled.assert_awaited_once_with("mob1s1a1", False)
+        mock_coordinator.api.set_interface_enabled.assert_awaited_once_with(
+            "mob1s1a1", False
+        )
         mock_coordinator.async_request_refresh.assert_awaited_once()
 
     async def test_api_error_propagates(
@@ -78,9 +78,7 @@ class TestRutOSInterfaceSwitch:
         switch = RutOSInterfaceSwitch(mock_coordinator, "nonexistent")
         assert switch.is_on is False
 
-    def test_unique_id_format(
-        self, mock_coordinator: RutOSDataUpdateCoordinator
-    ):
+    def test_unique_id_format(self, mock_coordinator: RutOSDataUpdateCoordinator):
         """Test unique_id follows {serial}_{interface}_enabled pattern."""
         switch = RutOSInterfaceSwitch(mock_coordinator, "wan")
         assert switch.unique_id == "1234567890_wan_enabled"

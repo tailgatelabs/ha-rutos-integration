@@ -2,28 +2,21 @@
 
 from __future__ import annotations
 
-import logging
-
 import voluptuous as vol
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import Platform
+from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_USERNAME, Platform
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import RutOSAPI
 from .const import (
     ATTR_INTERFACES,
-    CONF_HOST,
-    CONF_PASSWORD,
     CONF_UPDATE_HOME_LOCATION,
-    CONF_USERNAME,
     DOMAIN,
     SERVICE_SET_FAILOVER_ORDER,
 )
 from .coordinator import RutOSDataUpdateCoordinator
-
-_LOGGER = logging.getLogger(__name__)
 
 PLATFORMS: list[Platform] = [
     Platform.SENSOR,
@@ -45,7 +38,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: RutOSConfigEntry) -> boo
         session=session,
     )
 
-    coordinator = RutOSDataUpdateCoordinator(hass, api)
+    coordinator = RutOSDataUpdateCoordinator(hass, entry, api)
     await coordinator.async_config_entry_first_refresh()
 
     entry.runtime_data = coordinator
@@ -60,7 +53,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: RutOSConfigEntry) -> boo
 
 async def async_unload_entry(hass: HomeAssistant, entry: RutOSConfigEntry) -> bool:
     """Unload a config entry."""
-    return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+
+    # Remove services when last config entry is unloaded
+    if unload_ok and not hass.config_entries.async_loaded_entries(DOMAIN):
+        hass.services.async_remove(DOMAIN, SERVICE_SET_FAILOVER_ORDER)
+
+    return unload_ok
 
 
 def _register_home_location_listener(

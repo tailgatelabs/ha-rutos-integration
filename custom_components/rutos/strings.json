@@ -20,6 +20,15 @@
       "already_configured": "This device is already configured."
     }
   },
+  "options": {
+    "step": {
+      "init": {
+        "data": {
+          "update_home_location": "Update Home Assistant home location from GPS"
+        }
+      }
+    }
+  },
   "entity": {
     "sensor": {
       "wan_status": {
@@ -36,11 +45,76 @@
       },
       "active_wan": {
         "name": "Active WAN interface"
+      },
+      "gps_latitude": {
+        "name": "GPS latitude"
+      },
+      "gps_longitude": {
+        "name": "GPS longitude"
+      },
+      "gps_speed": {
+        "name": "GPS speed"
+      },
+      "gps_altitude": {
+        "name": "GPS altitude"
+      },
+      "gps_satellites": {
+        "name": "GPS satellites"
+      },
+      "gps_heading": {
+        "name": "GPS heading"
+      },
+      "gps_fix_status": {
+        "name": "GPS fix status"
+      },
+      "gps_accuracy": {
+        "name": "GPS accuracy"
+      },
+      "data_used": {
+        "name": "{limit} data used"
+      },
+      "data_limit": {
+        "name": "{limit} data limit"
+      },
+      "data_usage_percent": {
+        "name": "{limit} data usage"
+      },
+      "modem_rssi": {
+        "name": "{modem} RSSI"
+      },
+      "modem_rsrp": {
+        "name": "{modem} RSRP"
+      },
+      "modem_rsrq": {
+        "name": "{modem} RSRQ"
+      },
+      "modem_sinr": {
+        "name": "{modem} SINR"
+      },
+      "modem_network_type": {
+        "name": "{modem} network type"
+      },
+      "modem_band": {
+        "name": "{modem} band"
+      },
+      "modem_operator": {
+        "name": "{modem} operator"
+      }
+    },
+    "button": {
+      "clear_data_usage": {
+        "name": "Clear data usage"
+      },
+      "modem_reboot": {
+        "name": "Reboot {modem}"
       }
     },
     "binary_sensor": {
       "internet_connectivity": {
         "name": "Internet connectivity"
+      },
+      "modem_roaming": {
+        "name": "{modem} roaming"
       }
     },
     "switch": {

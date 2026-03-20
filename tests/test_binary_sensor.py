@@ -37,9 +37,7 @@ class TestRutOSInternetConnectivitySensor:
         sensor = RutOSInternetConnectivitySensor(mock_coordinator)
         assert sensor.device_class == BinarySensorDeviceClass.CONNECTIVITY
 
-    def test_unique_id(
-        self, mock_coordinator: RutOSDataUpdateCoordinator
-    ):
+    def test_unique_id(self, mock_coordinator: RutOSDataUpdateCoordinator):
         """Test unique_id is {serial}_internet_connectivity."""
         sensor = RutOSInternetConnectivitySensor(mock_coordinator)
         assert sensor.unique_id == "1234567890_internet_connectivity"
@@ -58,9 +56,7 @@ class TestRutOSModemRoamingSensor:
         sensor = RutOSModemRoamingSensor(mock_coordinator, "modem1")
         assert sensor.is_on is False
 
-    def test_is_on_when_roaming(
-        self, mock_coordinator: RutOSDataUpdateCoordinator
-    ):
+    def test_is_on_when_roaming(self, mock_coordinator: RutOSDataUpdateCoordinator):
         """Test is_on is True when roaming."""
         mock_coordinator.data.modem_status = [
             {"id": "modem1", "operator": "AT&T", "roaming": True},
@@ -75,9 +71,7 @@ class TestRutOSModemRoamingSensor:
         sensor = RutOSModemRoamingSensor(mock_coordinator, "nonexistent")
         assert sensor.is_on is None
 
-    def test_unique_id(
-        self, mock_coordinator: RutOSDataUpdateCoordinator
-    ):
+    def test_unique_id(self, mock_coordinator: RutOSDataUpdateCoordinator):
         """Test unique_id follows {serial}_{modem}_roaming pattern."""
         sensor = RutOSModemRoamingSensor(mock_coordinator, "modem1")
         assert sensor.unique_id == "1234567890_modem1_roaming"

@@ -65,7 +65,9 @@ def _success(data=None):
     return {"success": True, "data": data}
 
 
-def _error(error: str = "Something went wrong", source: str = "General", code: int = 100):
+def _error(
+    error: str = "Something went wrong", source: str = "General", code: int = 100
+):
     """Return an error API response."""
     return {
         "success": False,
@@ -267,7 +269,7 @@ class TestEnsureSession:
         with aioresponses() as m:
             m.post(_url("/login"), payload=_login_success())
 
-            results = await asyncio.gather(
+            await asyncio.gather(
                 api_client._ensure_session(),
                 api_client._ensure_session(),
                 api_client._ensure_session(),
@@ -461,11 +463,13 @@ class TestGetInternetStatus:
             m.post(_url("/login"), payload=_login_success())
             m.get(
                 _url("/internet_connection/status"),
-                payload=_success({
-                    "ipv4_status": "connected",
-                    "ipv6_status": "disconnected",
-                    "dns_status": "connected",
-                }),
+                payload=_success(
+                    {
+                        "ipv4_status": "connected",
+                        "ipv6_status": "disconnected",
+                        "dns_status": "connected",
+                    }
+                ),
             )
 
             assert await api_client.get_internet_status() is True
@@ -476,11 +480,13 @@ class TestGetInternetStatus:
             m.post(_url("/login"), payload=_login_success())
             m.get(
                 _url("/internet_connection/status"),
-                payload=_success({
-                    "ipv4_status": "disconnected",
-                    "ipv6_status": "disconnected",
-                    "dns_status": "disconnected",
-                }),
+                payload=_success(
+                    {
+                        "ipv4_status": "disconnected",
+                        "ipv6_status": "disconnected",
+                        "dns_status": "disconnected",
+                    }
+                ),
             )
 
             assert await api_client.get_internet_status() is False
@@ -550,7 +556,9 @@ class TestSetFailoverOrder:
             assert len(put_requests) == 2
 
             # First interface gets metric 10
-            wan_put = next(p for p in put_requests if "wan" in p[0] and "mob" not in p[0])
+            wan_put = next(
+                p for p in put_requests if "wan" in p[0] and "mob" not in p[0]
+            )
             assert wan_put[1] == {"data": {"metric": "10"}}
 
             # Second interface gets metric 20
@@ -822,8 +830,7 @@ class TestClearDataUsage:
 
             # Verify the POST was sent
             post_count = sum(
-                1 for key in m.requests
-                if key[0] == "POST" and "clear" in str(key[1])
+                1 for key in m.requests if key[0] == "POST" and "clear" in str(key[1])
             )
             assert post_count == 1
 
@@ -840,8 +847,7 @@ class TestRebootModem:
             await api_client.reboot_modem("modem1")
 
             post_count = sum(
-                1 for key in m.requests
-                if key[0] == "POST" and "modem1" in str(key[1])
+                1 for key in m.requests if key[0] == "POST" and "modem1" in str(key[1])
             )
             assert post_count == 1
 

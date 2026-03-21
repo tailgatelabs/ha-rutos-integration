@@ -20,12 +20,12 @@ class FailoverPreset(StrEnum):
     STARLINK_FIRST = "starlink_cellular_wifi"
 
 
+# Interface IDs as they appear in mwan3 member config.
 FAILOVER_PRESETS: dict[str, list[str]] = {
-    FailoverPreset.CELLULAR_FIRST: ["mob1s1a1", "mob1s2a1", "wan1", "wifi1"],
-    FailoverPreset.STARLINK_FIRST: ["wan1", "mob1s1a1", "mob1s2a1", "wifi1"],
+    FailoverPreset.CELLULAR_FIRST: ["mob1s1a1", "mob1s2a1", "wan1", "wan2"],
+    FailoverPreset.STARLINK_FIRST: ["wan1", "mob1s1a1", "mob1s2a1", "wan2"],
 }
 
-# Derive detection sets from the presets themselves.
 _CELLULAR_IFACES = set(FAILOVER_PRESETS[FailoverPreset.CELLULAR_FIRST][:2])
 _STARLINK_IFACE = FAILOVER_PRESETS[FailoverPreset.STARLINK_FIRST][0]
 
@@ -55,18 +55,19 @@ class RutOSFailoverSelect(RutOSEntity, SelectEntity):
 
     @property
     def current_option(self) -> str | None:
-        """Determine the current failover preset from interface metrics."""
-        interfaces = self.coordinator.data.wan_interfaces
+        """Determine the current failover preset from mwan3 member metrics."""
+        members = self.coordinator.data.failover_members
         cellular_metric: int | None = None
         starlink_metric: int | None = None
 
-        for iface in interfaces:
-            if iface["name"] in _CELLULAR_IFACES:
-                m = iface.get("metric", 0)
-                if cellular_metric is None or m < cellular_metric:
-                    cellular_metric = m
-            elif iface["name"] == _STARLINK_IFACE:
-                starlink_metric = iface.get("metric", 0)
+        for member in members:
+            iface = member.get("interface", "")
+            metric = int(member.get("metric", 0))
+            if iface in _CELLULAR_IFACES:
+                if cellular_metric is None or metric < cellular_metric:
+                    cellular_metric = metric
+            elif iface == _STARLINK_IFACE:
+                starlink_metric = metric
 
         if cellular_metric is not None and starlink_metric is not None:
             if cellular_metric < starlink_metric:

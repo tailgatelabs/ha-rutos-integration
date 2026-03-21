@@ -195,6 +195,12 @@ def mock_api(mock_device_info, mock_wan_interfaces) -> AsyncMock:
         {"id": "modem1", "operator": "T-Mobile", "roaming": False},
     ]
     api.get_modems.return_value = [{"id": "modem1"}]
+    api.get_failover_members.return_value = [
+        {"id": "mob1s1a1_member_mwan", "interface": "mob1s1a1", "metric": "1"},
+        {"id": "mob1s2a1_member_mwan", "interface": "mob1s2a1", "metric": "2"},
+        {"id": "wan1_member_mwan", "interface": "wan1", "metric": "3"},
+        {"id": "wan2_member_mwan", "interface": "wifi1", "metric": "4"},
+    ]
     api.reboot_modem.return_value = None
     api.set_interface_enabled.return_value = None
     api.set_failover_order.return_value = None

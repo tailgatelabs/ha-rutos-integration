@@ -350,13 +350,24 @@ class RutOSAPI:
         return modems
 
     async def set_failover_order(self, interfaces: list[str]) -> None:
-        """Set the failover order by updating interface metrics."""
+        """Set the failover order by updating mwan3 member metrics."""
         for idx, iface_id in enumerate(interfaces):
-            metric = (idx + 1) * 10
+            member_id = f"{iface_id}_member_mwan"
             await self.put(
-                f"/interfaces/config/{iface_id}",
-                {"data": {"metric": str(metric)}},
+                "/failover/members/config",
+                {"data": {"id": member_id, "metric": str(idx + 1)}},
             )
+
+    async def get_failover_members(self) -> list[dict[str, Any]]:
+        """Fetch mwan3 failover member configs (priority metrics)."""
+        data = await self.get("/failover/members/config")
+        if not isinstance(data, list):
+            return []
+        return [
+            m
+            for m in data
+            if m.get("id", "").endswith("_member_mwan")
+        ]
 
     async def get_gps_position(self) -> dict[str, Any] | None:
         """Fetch GPS position data (lat, lon, speed, altitude, etc.)."""

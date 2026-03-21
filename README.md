@@ -54,12 +54,32 @@ failover control.
 
 ## Configuration
 
+### Initial Setup
+
 1. Go to **Settings** > **Devices & services** > **Add integration**
 2. Search for "RutOS"
 3. Enter:
    - **Host** — IP address or hostname of your router (e.g., `192.168.1.1`)
    - **Username** — Router admin username (default: `admin`)
    - **Password** — Router admin password
+
+### Failover Priority
+
+The integration includes a **Failover priority** select entity that lets you
+switch between WAN failover orderings with a single tap. To set it up:
+
+1. Go to **Settings** > **Devices & services** > **RutOS** > **Configure**
+2. **Step 1 — General settings:** Toggle the home location GPS option and click
+   **Submit**
+3. **Step 2 — Failover groups:** The integration queries your router's failover
+   members and displays one text field per interface. Type a label for each
+   interface (e.g., "Cellular", "Starlink", "WiFi"). Interfaces that share the
+   same label are grouped and reordered together.
+4. Click **Submit** — the integration reloads and a **Failover priority** select
+   entity appears with all permutations of your labels as options (e.g.,
+   "Cellular, Starlink, WiFi" vs "Starlink, Cellular, WiFi").
+
+To change labels later, repeat the same Configure flow.
 
 ## Services
 
@@ -71,9 +91,9 @@ Reorder WAN interface failover priority.
 service: rutos.set_failover_order
 data:
   interfaces:
-    - wan
+    - wan1
     - mob1s1a1
-    - mob2s1a1
+    - mob1s2a1
 ```
 
 The first interface in the list gets the highest priority.
@@ -162,6 +182,12 @@ location from GPS**.
 | Entity                | Description                       |
 | --------------------- | --------------------------------- |
 | `{interface} enabled` | Enable or disable a WAN interface |
+
+### Select
+
+| Entity              | Description                                    |
+| ------------------- | ---------------------------------------------- |
+| `Failover priority` | Switch between WAN failover priority orderings |
 
 ### Buttons
 

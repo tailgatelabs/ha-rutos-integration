@@ -30,6 +30,7 @@ class RutOSData:
     modem_signal: list[dict[str, Any]] = field(default_factory=list)
     modem_status: list[dict[str, Any]] = field(default_factory=list)
     modems: list[dict[str, Any]] = field(default_factory=list)
+    failover_members: list[dict[str, Any]] = field(default_factory=list)
 
 
 class RutOSDataUpdateCoordinator(DataUpdateCoordinator[RutOSData]):
@@ -72,6 +73,7 @@ class RutOSDataUpdateCoordinator(DataUpdateCoordinator[RutOSData]):
             list[dict[str, Any]],
             list[dict[str, Any]],
             list[dict[str, Any]],
+            list[dict[str, Any]],
         ]
         try:
             results = cast(
@@ -84,6 +86,7 @@ class RutOSDataUpdateCoordinator(DataUpdateCoordinator[RutOSData]):
                     self.api.get_modem_signal(),
                     self.api.get_modem_status(),
                     self.api.get_modems(),
+                    self.api.get_failover_members(),
                 ),
             )
         except RutOSAuthError as err:
@@ -99,5 +102,6 @@ class RutOSDataUpdateCoordinator(DataUpdateCoordinator[RutOSData]):
             self.data.modem_signal,
             self.data.modem_status,
             self.data.modems,
+            self.data.failover_members,
         ) = results
         return self.data

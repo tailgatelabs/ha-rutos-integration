@@ -16,6 +16,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import RutOSConfigEntry
+from .const import CONF_FAILOVER_GROUPS
 from .coordinator import RutOSDataUpdateCoordinator
 from .entity import RutOSEntity
 
@@ -205,7 +206,12 @@ async def async_setup_entry(
         for iface in coordinator.data.wan_interfaces
         for description in INTERFACE_SENSORS
     ]
-    entities.append(RutOSActiveWANSensor(coordinator))
+    groups: dict[str, list[str]] = entry.options.get(CONF_FAILOVER_GROUPS, {})
+    iface_labels: dict[str, str] = {}
+    for label, ifaces in groups.items():
+        for iface in ifaces:
+            iface_labels[iface] = label
+    entities.append(RutOSActiveWANSensor(coordinator, iface_labels))
     entities.extend(RutOSGPSSensorEntity(coordinator, desc) for desc in GPS_SENSORS)
     for limit in coordinator.data.data_limit:
         limit_id = limit.get("id", "")
@@ -390,17 +396,23 @@ class RutOSActiveWANSensor(RutOSEntity, SensorEntity):
 
     _attr_translation_key = "active_wan"
 
-    def __init__(self, coordinator: RutOSDataUpdateCoordinator) -> None:
+    def __init__(
+        self,
+        coordinator: RutOSDataUpdateCoordinator,
+        iface_labels: dict[str, str],
+    ) -> None:
         """Initialize the sensor."""
         super().__init__(coordinator)
+        self._iface_labels = iface_labels
         self._attr_unique_id = (
             f"{coordinator.data.device_info.get('serial', '')}_active_wan"
         )
 
     @property
     def native_value(self) -> str | None:
-        """Return the name of the active (first up) WAN interface."""
+        """Return the label of the active (first up) WAN interface."""
         for iface in self.coordinator.data.wan_interfaces:
             if iface.get("status") == "up":
-                return iface["name"]
+                name = iface["name"]
+                return self._iface_labels.get(name, name)
         return None

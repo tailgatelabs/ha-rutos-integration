@@ -23,6 +23,7 @@ PLATFORMS: list[Platform] = [
     Platform.BINARY_SENSOR,
     Platform.SWITCH,
     Platform.BUTTON,
+    Platform.SELECT,
 ]
 
 type RutOSConfigEntry = ConfigEntry[RutOSDataUpdateCoordinator]
@@ -47,8 +48,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: RutOSConfigEntry) -> boo
 
     _register_services(hass)
     _register_home_location_listener(hass, entry, coordinator)
+    entry.async_on_unload(entry.add_update_listener(_async_options_updated))
 
     return True
+
+
+async def _async_options_updated(hass: HomeAssistant, entry: RutOSConfigEntry) -> None:
+    """Reload the integration when options change."""
+    await hass.config_entries.async_reload(entry.entry_id)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: RutOSConfigEntry) -> bool:

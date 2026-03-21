@@ -94,11 +94,19 @@ class TestRutOSSensorEntity:
 class TestRutOSActiveWANSensor:
     """Tests for the active WAN sensor."""
 
-    def test_active_wan_returns_first_up(
+    def test_active_wan_returns_label_when_configured(
         self, mock_coordinator: RutOSDataUpdateCoordinator
     ):
-        """Test returns name of first 'up' interface."""
-        sensor = RutOSActiveWANSensor(mock_coordinator)
+        """Test returns human-readable label for the active interface."""
+        labels = {"mob1s1a1": "Cellular", "wan1": "Starlink"}
+        sensor = RutOSActiveWANSensor(mock_coordinator, labels)
+        assert sensor.native_value == "Cellular"
+
+    def test_active_wan_returns_name_without_label(
+        self, mock_coordinator: RutOSDataUpdateCoordinator
+    ):
+        """Test returns raw interface name when no label is configured."""
+        sensor = RutOSActiveWANSensor(mock_coordinator, {})
         assert sensor.native_value == "mob1s1a1"
 
     def test_active_wan_none_when_all_down(
@@ -108,12 +116,12 @@ class TestRutOSActiveWANSensor:
         for iface in mock_coordinator.data.wan_interfaces:
             iface["status"] = "down"
 
-        sensor = RutOSActiveWANSensor(mock_coordinator)
+        sensor = RutOSActiveWANSensor(mock_coordinator, {})
         assert sensor.native_value is None
 
     def test_unique_id(self, mock_coordinator: RutOSDataUpdateCoordinator):
         """Test unique_id is {serial}_active_wan."""
-        sensor = RutOSActiveWANSensor(mock_coordinator)
+        sensor = RutOSActiveWANSensor(mock_coordinator, {})
         assert sensor.unique_id == "1234567890_active_wan"
 
 

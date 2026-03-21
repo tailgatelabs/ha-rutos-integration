@@ -69,25 +69,29 @@ class TestRutOSFailoverSelect:
         )
         mock_coordinator.async_request_refresh.assert_awaited_once()
 
-    def test_available_when_interfaces_match(self, mock_coordinator):
-        """Test entity is available when configured interfaces exist on router."""
-        mock_coordinator.data.failover_members = [
-            {"interface": "mob1s1a1", "metric": "1"},
-            {"interface": "mob1s2a1", "metric": "2"},
-            {"interface": "wan1", "metric": "3"},
-            {"interface": "wan2", "metric": "4"},
-            {"interface": "wan3", "metric": "5"},
-        ]
+    def test_available_when_groups_active(self, mock_coordinator):
+        """Test entity is available when at least 2 groups have active interfaces."""
         entity = RutOSFailoverSelect(mock_coordinator, GROUPS)
         assert entity.available is True
 
-    def test_unavailable_when_interface_missing(self, mock_coordinator):
-        """Test entity is unavailable when a configured interface is gone."""
-        mock_coordinator.data.failover_members = [
-            {"interface": "mob1s1a1", "metric": "1"},
-        ]
+    def test_unavailable_when_too_few_groups_active(self, mock_coordinator):
+        """Test entity is unavailable when fewer than 2 groups are active."""
+        for iface in mock_coordinator.data.wan_interfaces:
+            if iface["name"] in ("wan1", "wan2"):
+                iface["status"] = "down"
         entity = RutOSFailoverSelect(mock_coordinator, GROUPS)
         assert entity.available is False
+
+    def test_inactive_group_excluded_from_options(self, mock_coordinator):
+        """Test that groups with all interfaces down are excluded from options."""
+        for iface in mock_coordinator.data.wan_interfaces:
+            if iface["name"] == "wan2":
+                iface["status"] = "down"
+        entity = RutOSFailoverSelect(mock_coordinator, GROUPS)
+        assert len(entity.options) == 2
+        assert "Cellular, Starlink" in entity.options
+        assert "Starlink, Cellular" in entity.options
+        assert all("WiFi" not in opt for opt in entity.options)
 
     def test_unique_id_format(self, mock_coordinator):
         """Test unique_id includes serial and suffix."""

@@ -46,17 +46,32 @@ class RutOSFailoverSelect(RutOSEntity, SelectEntity):
         self._attr_unique_id = (
             f"{coordinator.data.device_info.get('serial', '')}_failover_priority"
         )
-        self._attr_options = [
-            ", ".join(perm) for perm in itertools.permutations(groups.keys())
+
+    def _active_groups(self) -> list[str]:
+        """Return group labels that have at least one active interface."""
+        active_ifaces = {
+            iface["name"]
+            for iface in self.coordinator.data.wan_interfaces
+            if iface.get("status") == "up"
+        }
+        return [
+            label
+            for label, ifaces in self._groups.items()
+            if any(i in active_ifaces for i in ifaces)
         ]
 
     @property
+    def options(self) -> list[str]:
+        """Return all permutations of currently active group labels."""
+        active = self._active_groups()
+        if len(active) < 2:  # noqa: PLR2004
+            return []
+        return [", ".join(perm) for perm in itertools.permutations(active)]
+
+    @property
     def available(self) -> bool:
-        """Return False if configured interfaces don't match the router."""
-        current = {
-            m.get("interface", "") for m in self.coordinator.data.failover_members
-        }
-        return bool(self._configured_ifaces <= current)
+        """Return False if fewer than 2 groups are active."""
+        return len(self._active_groups()) >= 2  # noqa: PLR2004
 
     @property
     def current_option(self) -> str | None:
@@ -64,18 +79,20 @@ class RutOSFailoverSelect(RutOSEntity, SelectEntity):
         members = self.coordinator.data.failover_members
         iface_metrics = {m.get("interface", ""): int(m.get("metric", 0)) for m in members}
 
+        active = self._active_groups()
         group_min_metrics: dict[str, int] = {}
-        for label, ifaces in self._groups.items():
+        for label in active:
+            ifaces = self._groups[label]
             metrics = [iface_metrics[i] for i in ifaces if i in iface_metrics]
             if metrics:
                 group_min_metrics[label] = min(metrics)
 
-        if len(group_min_metrics) != len(self._groups):
+        if len(group_min_metrics) != len(active):
             return None
 
         sorted_groups = sorted(group_min_metrics, key=lambda g: group_min_metrics[g])
         current = ", ".join(sorted_groups)
-        return current if current in self._attr_options else None
+        return current if current in self.options else None
 
     async def async_select_option(self, option: str) -> None:
         """Set the failover order for the selected permutation."""

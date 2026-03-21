@@ -351,12 +351,11 @@ class RutOSAPI:
 
     async def set_failover_order(self, interfaces: list[str]) -> None:
         """Set the failover order by updating mwan3 member metrics."""
-        for idx, iface_id in enumerate(interfaces):
-            member_id = f"{iface_id}_member_mwan"
-            await self.put(
-                "/failover/members/config",
-                {"data": {"id": member_id, "metric": str(idx + 1)}},
-            )
+        members = [
+            {"id": f"{iface_id}_member_mwan", "metric": str(idx + 1)}
+            for idx, iface_id in enumerate(interfaces)
+        ]
+        await self.put("/failover/members/config", {"data": members})
 
     async def get_failover_members(self) -> list[dict[str, Any]]:
         """Fetch mwan3 failover member configs (priority metrics)."""

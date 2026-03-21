@@ -538,26 +538,26 @@ class TestSetFailoverOrder:
     """Tests for set_failover_order."""
 
     async def test_set_failover_order(self, api_client):
-        """Test sets mwan3 member metrics via PUT calls."""
+        """Test sets mwan3 member metrics via single bulk PUT."""
         with aioresponses() as m:
             m.post(_url("/login"), payload=_login_success())
-            m.put(_url("/failover/members/config"), payload=_success(), repeat=True)
+            m.put(_url("/failover/members/config"), payload=_success())
 
             await api_client.set_failover_order(["wan1", "mob1s1a1"])
 
-            # Verify PUT calls
+            # Verify single PUT call with array payload
             put_requests = []
             for key, requests in m.requests.items():
                 if key[0] == "PUT":
                     for req in requests:
                         put_requests.append(req.kwargs["json"])
 
-            assert len(put_requests) == 2
+            assert len(put_requests) == 1
             assert put_requests[0] == {
-                "data": {"id": "wan1_member_mwan", "metric": "1"}
-            }
-            assert put_requests[1] == {
-                "data": {"id": "mob1s1a1_member_mwan", "metric": "2"}
+                "data": [
+                    {"id": "wan1_member_mwan", "metric": "1"},
+                    {"id": "mob1s1a1_member_mwan", "metric": "2"},
+                ]
             }
 
 

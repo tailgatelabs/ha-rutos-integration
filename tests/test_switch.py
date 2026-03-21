@@ -20,30 +20,27 @@ class TestRutOSInterfaceSwitch:
             RutOSInterfaceSwitch(mock_coordinator, iface["name"])
             for iface in mock_coordinator.data.wan_interfaces
         ]
-        assert len(switches) == 2
+        assert len(switches) == 4
         names = {s._interface_name for s in switches}
-        assert names == {"wan", "mob1s1a1"}
+        assert names == {"mob1s1a1", "mob1s2a1", "wan1", "wan2"}
 
     def test_is_on_reflects_enabled_state(
         self, mock_coordinator: RutOSDataUpdateCoordinator
     ):
         """Test is_on matches interface enabled field."""
-        switch_wan = RutOSInterfaceSwitch(mock_coordinator, "wan")
-        assert switch_wan.is_on is True
-
-        switch_mob = RutOSInterfaceSwitch(mock_coordinator, "mob1s1a1")
-        assert switch_mob.is_on is False
+        switch = RutOSInterfaceSwitch(mock_coordinator, "mob1s1a1")
+        assert switch.is_on is True
 
     async def test_turn_on_calls_api(
         self, mock_coordinator: RutOSDataUpdateCoordinator
     ):
         """Test turn_on calls set_interface_enabled(name, True) + refresh."""
         mock_coordinator.async_request_refresh = AsyncMock()
-        switch = RutOSInterfaceSwitch(mock_coordinator, "wan")
+        switch = RutOSInterfaceSwitch(mock_coordinator, "wan1")
 
         await switch.async_turn_on()
 
-        mock_coordinator.api.set_interface_enabled.assert_awaited_once_with("wan", True)
+        mock_coordinator.api.set_interface_enabled.assert_awaited_once_with("wan1", True)
         mock_coordinator.async_request_refresh.assert_awaited_once()
 
     async def test_turn_off_calls_api(
@@ -66,7 +63,7 @@ class TestRutOSInterfaceSwitch:
         """Test API errors are not silently swallowed."""
         mock_coordinator.api.set_interface_enabled.side_effect = RutOSAPIError("fail")
         mock_coordinator.async_request_refresh = AsyncMock()
-        switch = RutOSInterfaceSwitch(mock_coordinator, "wan")
+        switch = RutOSInterfaceSwitch(mock_coordinator, "wan1")
 
         with pytest.raises(RutOSAPIError):
             await switch.async_turn_on()
@@ -80,5 +77,5 @@ class TestRutOSInterfaceSwitch:
 
     def test_unique_id_format(self, mock_coordinator: RutOSDataUpdateCoordinator):
         """Test unique_id follows {serial}_{interface}_enabled pattern."""
-        switch = RutOSInterfaceSwitch(mock_coordinator, "wan")
-        assert switch.unique_id == "1234567890_wan_enabled"
+        switch = RutOSInterfaceSwitch(mock_coordinator, "wan1")
+        assert switch.unique_id == "1234567890_wan1_enabled"

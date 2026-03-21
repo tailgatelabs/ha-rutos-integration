@@ -150,9 +150,15 @@ class RutOSOptionsFlowHandler(OptionsFlow):
                 self._options_data[CONF_FAILOVER_GROUPS] = groups
                 return self.async_create_entry(title="", data=self._options_data)
 
-        # Fetch current failover members from the router
+        # Fetch current failover members, excluding disabled interfaces
         coordinator = self.config_entry.runtime_data
         members = await coordinator.api.get_failover_members()
+        active_ifaces = {
+            iface["name"] for iface in coordinator.data.wan_interfaces
+        }
+        members = [
+            m for m in members if m.get("interface", "") in active_ifaces
+        ]
 
         # Build reverse map: iface_id → existing label
         existing_groups: dict[str, list[str]] = self.config_entry.options.get(

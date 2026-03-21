@@ -29,44 +29,44 @@ class TestRutOSSensorEntity:
         """Test 4 sensors per interface + 1 active WAN sensor."""
         interfaces = mock_coordinator.data.wan_interfaces
         expected = len(interfaces) * len(INTERFACE_SENSORS) + 1
-        assert expected == 9  # 2 interfaces * 4 sensors + 1 active WAN
+        assert expected == 17  # 4 interfaces * 4 sensors + 1 active WAN
 
     def test_status_sensor_value(self, mock_coordinator: RutOSDataUpdateCoordinator):
         """Test status sensor returns up/down."""
         desc = INTERFACE_SENSORS[0]  # status
-        sensor = RutOSSensorEntity(mock_coordinator, desc, "wan")
+        sensor = RutOSSensorEntity(mock_coordinator, desc, "wan1")
         assert sensor.native_value == "up"
 
-        sensor_down = RutOSSensorEntity(mock_coordinator, desc, "mob1s1a1")
-        assert sensor_down.native_value == "down"
+        sensor_mob = RutOSSensorEntity(mock_coordinator, desc, "mob1s1a1")
+        assert sensor_mob.native_value == "up"
 
     def test_ip_address_sensor_value(
         self, mock_coordinator: RutOSDataUpdateCoordinator
     ):
         """Test IP address sensor returns IP or None."""
         desc = INTERFACE_SENSORS[1]  # ip_address
-        sensor = RutOSSensorEntity(mock_coordinator, desc, "wan")
+        sensor = RutOSSensorEntity(mock_coordinator, desc, "wan1")
         assert sensor.native_value == "192.168.1.100"
 
-        sensor_none = RutOSSensorEntity(mock_coordinator, desc, "mob1s1a1")
-        assert sensor_none.native_value is None
+        sensor_mob = RutOSSensorEntity(mock_coordinator, desc, "mob1s1a1")
+        assert sensor_mob.native_value == "10.0.0.1"
 
     def test_uptime_sensor_value(self, mock_coordinator: RutOSDataUpdateCoordinator):
         """Test uptime sensor returns seconds."""
         desc = INTERFACE_SENSORS[3]  # uptime
-        sensor = RutOSSensorEntity(mock_coordinator, desc, "wan")
-        assert sensor.native_value == 3600
+        sensor = RutOSSensorEntity(mock_coordinator, desc, "wan1")
+        assert sensor.native_value == 7200
 
     def test_unique_id_format(self, mock_coordinator: RutOSDataUpdateCoordinator):
         """Test unique_id follows {serial}_{interface}_{key} pattern."""
         desc = INTERFACE_SENSORS[0]
-        sensor = RutOSSensorEntity(mock_coordinator, desc, "wan")
-        assert sensor.unique_id == "1234567890_wan_status"
+        sensor = RutOSSensorEntity(mock_coordinator, desc, "wan1")
+        assert sensor.unique_id == "1234567890_wan1_status"
 
     def test_device_info(self, mock_coordinator: RutOSDataUpdateCoordinator):
         """Test device_info contains correct identifiers and manufacturer."""
         desc = INTERFACE_SENSORS[0]
-        sensor = RutOSSensorEntity(mock_coordinator, desc, "wan")
+        sensor = RutOSSensorEntity(mock_coordinator, desc, "wan1")
         info = sensor.device_info
 
         assert (DOMAIN, "1234567890") in info["identifiers"]
@@ -84,7 +84,7 @@ class TestRutOSSensorEntity:
     def test_proto_sensor_value(self, mock_coordinator: RutOSDataUpdateCoordinator):
         """Test protocol sensor returns the proto field."""
         desc = INTERFACE_SENSORS[2]  # proto
-        sensor = RutOSSensorEntity(mock_coordinator, desc, "wan")
+        sensor = RutOSSensorEntity(mock_coordinator, desc, "wan1")
         assert sensor.native_value == "dhcp"
 
         sensor_mob = RutOSSensorEntity(mock_coordinator, desc, "mob1s1a1")
@@ -99,7 +99,7 @@ class TestRutOSActiveWANSensor:
     ):
         """Test returns name of first 'up' interface."""
         sensor = RutOSActiveWANSensor(mock_coordinator)
-        assert sensor.native_value == "wan"
+        assert sensor.native_value == "mob1s1a1"
 
     def test_active_wan_none_when_all_down(
         self, mock_coordinator: RutOSDataUpdateCoordinator

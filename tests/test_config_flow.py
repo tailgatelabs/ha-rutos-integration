@@ -13,6 +13,7 @@ from custom_components.rutos.api import RutOSAuthError, RutOSConnectionError
 from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_USERNAME
 
 from custom_components.rutos.const import (
+    CONF_FAILOVER_GROUPS,
     CONF_UPDATE_HOME_LOCATION,
     DOMAIN,
 )
@@ -185,19 +186,89 @@ async def test_options_flow_shows_form(hass: HomeAssistant, mock_config_entry):
     assert result["step_id"] == "init"
 
 
-async def test_options_flow_saves_option(hass: HomeAssistant, mock_config_entry):
-    """Test options flow saves the update_home_location option."""
+async def test_options_flow_init_advances_to_failover_groups(
+    hass: HomeAssistant, mock_config_entry, mock_api
+):
+    """Test submitting init step advances to failover_groups step."""
     mock_config_entry.add_to_hass(hass)
 
-    with patch("custom_components.rutos.async_setup_entry", return_value=True):
+    with patch("custom_components.rutos.RutOSAPI", return_value=mock_api):
         await hass.config_entries.async_setup(mock_config_entry.entry_id)
         await hass.async_block_till_done()
 
     result = await hass.config_entries.options.async_init(mock_config_entry.entry_id)
     result = await hass.config_entries.options.async_configure(
         result["flow_id"],
+        user_input={CONF_UPDATE_HOME_LOCATION: True},
+    )
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "failover_groups"
+
+
+async def test_options_flow_saves_failover_groups(
+    hass: HomeAssistant, mock_config_entry, mock_api
+):
+    """Test full options flow saves both general options and failover groups."""
+    mock_config_entry.add_to_hass(hass)
+
+    with patch("custom_components.rutos.RutOSAPI", return_value=mock_api):
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+    # Step 1: init
+    result = await hass.config_entries.options.async_init(mock_config_entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
         user_input={CONF_UPDATE_HOME_LOCATION: False},
+    )
+
+    # Step 2: failover_groups
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        user_input={
+            "mob1s1a1": "Cellular",
+            "mob1s2a1": "Cellular",
+            "wan1": "Starlink",
+            "wan2": "WiFi",
+        },
     )
 
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert mock_config_entry.options[CONF_UPDATE_HOME_LOCATION] is False
+    assert mock_config_entry.options[CONF_FAILOVER_GROUPS] == {
+        "Cellular": ["mob1s1a1", "mob1s2a1"],
+        "Starlink": ["wan1"],
+        "WiFi": ["wan2"],
+    }
+
+
+async def test_options_flow_too_few_groups_error(
+    hass: HomeAssistant, mock_config_entry, mock_api
+):
+    """Test that fewer than 2 distinct labels shows an error."""
+    mock_config_entry.add_to_hass(hass)
+
+    with patch("custom_components.rutos.RutOSAPI", return_value=mock_api):
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+    result = await hass.config_entries.options.async_init(mock_config_entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        user_input={CONF_UPDATE_HOME_LOCATION: True},
+    )
+
+    # All interfaces same label
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        user_input={
+            "mob1s1a1": "All",
+            "mob1s2a1": "All",
+            "wan1": "All",
+            "wan2": "All",
+        },
+    )
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {"base": "too_few_groups"}

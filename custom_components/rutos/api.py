@@ -363,11 +363,7 @@ class RutOSAPI:
         data = await self.get("/failover/members/config")
         if not isinstance(data, list):
             return []
-        return [
-            m
-            for m in data
-            if m.get("id", "").endswith("_member_mwan")
-        ]
+        return [m for m in data if m.get("id", "").endswith("_member_mwan")]
 
     async def get_gps_position(self) -> dict[str, Any] | None:
         """Fetch GPS position data (lat, lon, speed, altitude, etc.)."""

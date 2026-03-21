@@ -126,6 +126,17 @@ def mock_modems() -> list[dict]:
 
 
 @pytest.fixture
+def mock_failover_members() -> list[dict]:
+    """Return mock failover member data."""
+    return [
+        {"id": "mob1s1a1_member_mwan", "interface": "mob1s1a1", "metric": "1"},
+        {"id": "mob1s2a1_member_mwan", "interface": "mob1s2a1", "metric": "2"},
+        {"id": "wan1_member_mwan", "interface": "wan1", "metric": "3"},
+        {"id": "wan2_member_mwan", "interface": "wan2", "metric": "4"},
+    ]
+
+
+@pytest.fixture
 def mock_rutos_data(
     mock_device_info,
     mock_wan_interfaces,
@@ -134,6 +145,7 @@ def mock_rutos_data(
     mock_modem_signal,
     mock_modem_status,
     mock_modems,
+    mock_failover_members,
 ) -> RutOSData:
     """Return a populated RutOSData instance."""
     return RutOSData(
@@ -145,6 +157,7 @@ def mock_rutos_data(
         modem_signal=mock_modem_signal,
         modem_status=mock_modem_status,
         modems=mock_modems,
+        failover_members=mock_failover_members,
     )
 
 
@@ -199,7 +212,7 @@ def mock_api(mock_device_info, mock_wan_interfaces) -> AsyncMock:
         {"id": "mob1s1a1_member_mwan", "interface": "mob1s1a1", "metric": "1"},
         {"id": "mob1s2a1_member_mwan", "interface": "mob1s2a1", "metric": "2"},
         {"id": "wan1_member_mwan", "interface": "wan1", "metric": "3"},
-        {"id": "wan2_member_mwan", "interface": "wifi1", "metric": "4"},
+        {"id": "wan2_member_mwan", "interface": "wan2", "metric": "4"},
     ]
     api.reboot_modem.return_value = None
     api.set_interface_enabled.return_value = None

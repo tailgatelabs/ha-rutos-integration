@@ -2,32 +2,16 @@
 
 from __future__ import annotations
 
-from enum import StrEnum
+import itertools
 
 from homeassistant.components.select import SelectEntity
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import RutOSConfigEntry
+from .const import CONF_FAILOVER_GROUPS
 from .coordinator import RutOSDataUpdateCoordinator
 from .entity import RutOSEntity
-
-
-class FailoverPreset(StrEnum):
-    """Failover priority presets."""
-
-    CELLULAR_FIRST = "cellular_starlink_wifi"
-    STARLINK_FIRST = "starlink_cellular_wifi"
-
-
-# Interface IDs as they appear in mwan3 member config.
-FAILOVER_PRESETS: dict[str, list[str]] = {
-    FailoverPreset.CELLULAR_FIRST: ["mob1s1a1", "mob1s2a1", "wan1", "wan2"],
-    FailoverPreset.STARLINK_FIRST: ["wan1", "mob1s1a1", "mob1s2a1", "wan2"],
-}
-
-_CELLULAR_IFACES = set(FAILOVER_PRESETS[FailoverPreset.CELLULAR_FIRST][:2])
-_STARLINK_IFACE = FAILOVER_PRESETS[FailoverPreset.STARLINK_FIRST][0]
 
 
 async def async_setup_entry(
@@ -36,47 +20,68 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the failover priority select."""
-    async_add_entities([RutOSFailoverSelect(entry.runtime_data)])
+    groups: dict[str, list[str]] = entry.options.get(CONF_FAILOVER_GROUPS, {})
+    if len(groups) < 2:  # noqa: PLR2004
+        return
+    async_add_entities([RutOSFailoverSelect(entry.runtime_data, groups)])
 
 
 class RutOSFailoverSelect(RutOSEntity, SelectEntity):
     """Select entity for WAN failover priority preset."""
 
     _attr_translation_key = "failover_priority"
-    _attr_options = list(FAILOVER_PRESETS.keys())
     _attr_icon = "mdi:swap-vertical"
 
-    def __init__(self, coordinator: RutOSDataUpdateCoordinator) -> None:
+    def __init__(
+        self,
+        coordinator: RutOSDataUpdateCoordinator,
+        groups: dict[str, list[str]],
+    ) -> None:
         """Initialize the select entity."""
         super().__init__(coordinator)
+        self._groups = groups
+        self._configured_ifaces: set[str] = set()
+        for ifaces in groups.values():
+            self._configured_ifaces.update(ifaces)
         self._attr_unique_id = (
             f"{coordinator.data.device_info.get('serial', '')}_failover_priority"
         )
+        self._attr_options = [
+            ", ".join(perm) for perm in itertools.permutations(groups.keys())
+        ]
+
+    @property
+    def available(self) -> bool:
+        """Return False if configured interfaces don't match the router."""
+        current = {
+            m.get("interface", "") for m in self.coordinator.data.failover_members
+        }
+        return bool(self._configured_ifaces <= current)
 
     @property
     def current_option(self) -> str | None:
-        """Determine the current failover preset from mwan3 member metrics."""
+        """Determine the current option from mwan3 member metrics."""
         members = self.coordinator.data.failover_members
-        cellular_metric: int | None = None
-        starlink_metric: int | None = None
+        iface_metrics = {m.get("interface", ""): int(m.get("metric", 0)) for m in members}
 
-        for member in members:
-            iface = member.get("interface", "")
-            metric = int(member.get("metric", 0))
-            if iface in _CELLULAR_IFACES:
-                if cellular_metric is None or metric < cellular_metric:
-                    cellular_metric = metric
-            elif iface == _STARLINK_IFACE:
-                starlink_metric = metric
+        group_min_metrics: dict[str, int] = {}
+        for label, ifaces in self._groups.items():
+            metrics = [iface_metrics[i] for i in ifaces if i in iface_metrics]
+            if metrics:
+                group_min_metrics[label] = min(metrics)
 
-        if cellular_metric is not None and starlink_metric is not None:
-            if cellular_metric < starlink_metric:
-                return FailoverPreset.CELLULAR_FIRST
-            return FailoverPreset.STARLINK_FIRST
-        return None
+        if len(group_min_metrics) != len(self._groups):
+            return None
+
+        sorted_groups = sorted(group_min_metrics, key=lambda g: group_min_metrics[g])
+        current = ", ".join(sorted_groups)
+        return current if current in self._attr_options else None
 
     async def async_select_option(self, option: str) -> None:
-        """Set the failover order for the selected preset."""
-        interfaces = FAILOVER_PRESETS[option]
+        """Set the failover order for the selected permutation."""
+        group_order = [g.strip() for g in option.split(", ")]
+        interfaces: list[str] = []
+        for label in group_order:
+            interfaces.extend(self._groups[label])
         await self.coordinator.api.set_failover_order(interfaces)
         await self.coordinator.async_request_refresh()

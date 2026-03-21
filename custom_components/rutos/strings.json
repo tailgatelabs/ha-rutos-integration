@@ -26,7 +26,16 @@
         "data": {
           "update_home_location": "Update Home Assistant home location from GPS"
         }
+      },
+      "failover_groups": {
+        "title": "Failover groups",
+        "description": "Assign a label to each failover interface. Interfaces with the same label are grouped and reordered together."
       }
+    },
+    "error": {
+      "too_few_groups": "At least two distinct group labels are required.",
+      "too_many_groups": "Too many groups. Use at most 5 distinct labels.",
+      "invalid_label": "Labels must not contain commas."
     }
   },
   "entity": {
@@ -124,11 +133,7 @@
     },
     "select": {
       "failover_priority": {
-        "name": "Failover priority",
-        "state": {
-          "cellular_starlink_wifi": "Cellular, Starlink, WiFi",
-          "starlink_cellular_wifi": "Starlink, Cellular, WiFi"
-        }
+        "name": "Failover priority"
       }
     }
   }

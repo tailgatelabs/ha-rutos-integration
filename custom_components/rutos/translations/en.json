@@ -108,6 +108,9 @@
       },
       "modem_operator": {
         "name": "{modem} operator"
+      },
+      "modem_active_sim": {
+        "name": "{modem} active SIM"
       }
     },
     "button": {
@@ -116,6 +119,9 @@
       },
       "modem_reboot": {
         "name": "Reboot {modem}"
+      },
+      "modem_switch_sim": {
+        "name": "Switch SIM {modem}"
       }
     },
     "binary_sensor": {

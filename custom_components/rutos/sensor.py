@@ -193,6 +193,14 @@ MODEM_STATUS_SENSORS: tuple[RutOSSensorEntityDescription, ...] = (
     ),
 )
 
+MODEM_DUAL_SIM_SENSORS: tuple[RutOSSensorEntityDescription, ...] = (
+    RutOSSensorEntityDescription(
+        key="active_sim",
+        translation_key="modem_active_sim",
+        value_fn=lambda m: m.get("active_sim"),
+    ),
+)
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -233,6 +241,11 @@ async def async_setup_entry(
             RutOSModemStatusSensor(coordinator, desc, modem_id)
             for desc in MODEM_STATUS_SENSORS
         )
+        if modem.get("dual_sim") or (modem.get("sim_count") or 0) >= 2:
+            entities.extend(
+                RutOSModemStatusSensor(coordinator, desc, modem_id)
+                for desc in MODEM_DUAL_SIM_SENSORS
+            )
     async_add_entities(entities)
 
 

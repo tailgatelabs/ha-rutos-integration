@@ -279,6 +279,10 @@ class RutOSAPI:
         """Reboot a specific modem."""
         await self.post(f"/modems/{modem_id}/actions/reboot")
 
+    async def switch_sim(self, modem_id: str) -> None:
+        """Switch to the next SIM card on a specific modem."""
+        await self.post(f"/modems/{modem_id}/actions/switch_sim")
+
     async def get_modems(self) -> list[dict[str, Any]]:
         """Fetch list of available modems."""
         try:
@@ -345,6 +349,9 @@ class RutOSAPI:
                     "id": modem_id,
                     "operator": modem.get("operator"),
                     "roaming": "roaming" in operator_state.lower(),
+                    "active_sim": modem.get("active_sim"),
+                    "dual_sim": modem.get("dual_sim"),
+                    "sim_count": modem.get("sim_count"),
                 }
             )
         return modems

@@ -25,6 +25,11 @@ async def async_setup_entry(
         RutOSModemRebootButton(coordinator, modem["id"])
         for modem in coordinator.data.modems
     )
+    entities.extend(
+        RutOSModemSwitchSimButton(coordinator, modem["id"])
+        for modem in coordinator.data.modem_status
+        if modem.get("dual_sim") or (modem.get("sim_count") or 0) >= 2
+    )
     async_add_entities(entities)
 
 
@@ -67,4 +72,28 @@ class RutOSModemRebootButton(RutOSEntity, ButtonEntity):
     async def async_press(self) -> None:
         """Handle the button press."""
         await self.coordinator.api.reboot_modem(self._modem_id)
+        await self.coordinator.async_request_refresh()
+
+
+class RutOSModemSwitchSimButton(RutOSEntity, ButtonEntity):
+    """Button to switch SIM card on a specific modem."""
+
+    _attr_translation_key = "modem_switch_sim"
+
+    def __init__(
+        self,
+        coordinator: RutOSDataUpdateCoordinator,
+        modem_id: str,
+    ) -> None:
+        """Initialize the button."""
+        super().__init__(coordinator)
+        self._modem_id = modem_id
+        self._attr_unique_id = (
+            f"{coordinator.data.device_info.get('serial', '')}_{modem_id}_switch_sim"
+        )
+        self._attr_translation_placeholders = {"modem": modem_id}
+
+    async def async_press(self) -> None:
+        """Handle the button press."""
+        await self.coordinator.api.switch_sim(self._modem_id)
         await self.coordinator.async_request_refresh()

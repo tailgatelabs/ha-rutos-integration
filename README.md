@@ -41,7 +41,7 @@ failover control.
 
 1. Open HACS in Home Assistant
 2. Go to **Integrations** > **Custom repositories**
-3. Add `https://github.com/tailgatelabs/ha-rutos-integration` as an
+3. Add `https://github.com/crbn60/ha-rutos-integration` as an
    **Integration**
 4. Search for "RutOS" and install it
 5. Restart Home Assistant

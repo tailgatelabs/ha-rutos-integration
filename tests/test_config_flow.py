@@ -216,23 +216,28 @@ async def test_options_flow_saves_failover_groups(
         await hass.config_entries.async_setup(mock_config_entry.entry_id)
         await hass.async_block_till_done()
 
-    # Step 1: init
-    result = await hass.config_entries.options.async_init(mock_config_entry.entry_id)
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"],
-        user_input={CONF_UPDATE_HOME_LOCATION: False},
-    )
+        # Step 1: init
+        result = await hass.config_entries.options.async_init(
+            mock_config_entry.entry_id
+        )
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"],
+            user_input={CONF_UPDATE_HOME_LOCATION: False},
+        )
 
-    # Step 2: failover_groups
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"],
-        user_input={
-            "mob1s1a1": "Cellular",
-            "mob1s2a1": "Cellular",
-            "wan1": "Starlink",
-            "wan2": "WiFi",
-        },
-    )
+        # Step 2: failover_groups — saving triggers a reload via the update
+        # listener, which re-instantiates RutOSAPI; keep the patch active and
+        # flush pending tasks so the reload uses the mock.
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"],
+            user_input={
+                "mob1s1a1": "Cellular",
+                "mob1s2a1": "Cellular",
+                "wan1": "Starlink",
+                "wan2": "WiFi",
+            },
+        )
+        await hass.async_block_till_done()
 
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert mock_config_entry.options[CONF_UPDATE_HOME_LOCATION] is False

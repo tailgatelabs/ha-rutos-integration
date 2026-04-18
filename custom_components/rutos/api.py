@@ -228,10 +228,12 @@ class RutOSAPI:
                 continue
 
             ip_addr = _extract_ip(iface)
+            iface_id = iface.get("id", "")
 
             interfaces.append(
                 {
-                    "name": iface.get("id", ""),
+                    "name": iface_id,
+                    "label": iface.get("name") or iface_id,
                     "enabled": iface.get("is_up", False),
                     "status": "up" if iface.get("is_up") else "down",
                     "ip_address": ip_addr,

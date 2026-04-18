@@ -41,6 +41,7 @@ def mock_wan_interfaces() -> list[dict]:
     return [
         {
             "name": "mob1s1a1",
+            "label": "mob1s1a1",
             "enabled": True,
             "status": "up",
             "ip_address": "10.0.0.1",
@@ -52,6 +53,7 @@ def mock_wan_interfaces() -> list[dict]:
         },
         {
             "name": "mob1s2a1",
+            "label": "mob1s2a1",
             "enabled": True,
             "status": "up",
             "ip_address": "10.0.0.2",
@@ -63,6 +65,7 @@ def mock_wan_interfaces() -> list[dict]:
         },
         {
             "name": "wan1",
+            "label": "wan1",
             "enabled": True,
             "status": "up",
             "ip_address": "192.168.1.100",
@@ -74,6 +77,7 @@ def mock_wan_interfaces() -> list[dict]:
         },
         {
             "name": "wan2",
+            "label": "wifi1",
             "enabled": True,
             "status": "up",
             "ip_address": "192.168.2.100",

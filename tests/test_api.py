@@ -508,6 +508,87 @@ class TestGetWanInterfaces:
 
             assert result[0]["ip_address"] is None
 
+    async def test_get_wan_interfaces_enabled_from_config_not_is_up(self, api_client):
+        """Issue #20: `enabled` must come from /interfaces/config UCI flag, not is_up.
+
+        The bug scenario: interface is enabled in the router GUI but hasn't yet
+        come up (SIM negotiation, DHCP pending). /interfaces/status returns
+        is_up=null/false while /interfaces/config has enabled="1". The switch
+        must read the config flag so it doesn't flip back off after toggle.
+        """
+        status = [
+            {
+                "id": "mob1s1a1",
+                "area_type": "wan",
+                "is_up": None,
+                "proto": "wwan",
+                "uptime": 0,
+                "metric": 1,
+            },
+            {
+                "id": "wan3",
+                "area_type": "wan",
+                "is_up": False,
+                "proto": "static",
+                "uptime": 0,
+                "metric": 5,
+            },
+            {
+                "id": "mob1s2a1",
+                "area_type": "wan",
+                "is_up": True,
+                "proto": "wwan",
+                "uptime": 100,
+                "metric": 2,
+            },
+        ]
+        configs = [
+            {"id": "lan", "area_type": "lan", "enabled": "1"},
+            {"id": "mob1s1a1", "area_type": "wan", "enabled": "1"},
+            {"id": "wan3", "area_type": "wan", "enabled": "0"},
+            {"id": "mob1s2a1", "area_type": "wan", "enabled": "1"},
+        ]
+        with aioresponses() as m:
+            m.post(_url("/login"), payload=_login_success())
+            m.get(_url("/interfaces/status"), payload=_success(status))
+            m.get(_url("/interfaces/config"), payload=_success(configs))
+
+            result = await api_client.get_wan_interfaces()
+
+            by_name = {i["name"]: i for i in result}
+            # Enabled in config but link not up yet — the bug scenario.
+            assert by_name["mob1s1a1"]["enabled"] is True
+            assert by_name["mob1s1a1"]["status"] == "down"
+            # Disabled in config, link down — switch should be off.
+            assert by_name["wan3"]["enabled"] is False
+            assert by_name["wan3"]["status"] == "down"
+            # Enabled in config and link up.
+            assert by_name["mob1s2a1"]["enabled"] is True
+            assert by_name["mob1s2a1"]["status"] == "up"
+
+    async def test_get_wan_interfaces_falls_back_to_is_up_when_config_fails(
+        self, api_client
+    ):
+        """If /interfaces/config is unavailable, fall back to is_up for enabled."""
+        status = [
+            {
+                "id": "wan",
+                "area_type": "wan",
+                "is_up": True,
+                "proto": "dhcp",
+                "uptime": 100,
+                "metric": 1,
+            },
+        ]
+        with aioresponses() as m:
+            m.post(_url("/login"), payload=_login_success())
+            m.get(_url("/interfaces/status"), payload=_success(status))
+            m.get(_url("/interfaces/config"), status=500)
+
+            result = await api_client.get_wan_interfaces()
+
+            assert result[0]["enabled"] is True
+
 
 class TestGetInternetStatus:
     """Tests for get_internet_status."""

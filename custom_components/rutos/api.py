@@ -223,18 +223,39 @@ class RutOSAPI:
         if not isinstance(data, list):
             return interfaces
 
+        # /interfaces/status reports live link state (is_up); the UCI "enabled"
+        # flag the router GUI and switch should track lives in /interfaces/config.
+        # Fall back to is_up if the config endpoint is unavailable.
+        config_by_id: dict[str, dict[str, Any]] = {}
+        try:
+            configs = await self.get("/interfaces/config")
+        except RutOSAPIError:
+            _LOGGER.debug("/interfaces/config unavailable; falling back to is_up")
+            configs = None
+        if isinstance(configs, list):
+            for cfg in configs:
+                if isinstance(cfg, dict) and cfg.get("area_type") == "wan":
+                    cfg_id = cfg.get("id")
+                    if isinstance(cfg_id, str):
+                        config_by_id[cfg_id] = cfg
+
         for iface in data:
             if iface.get("area_type") != "wan":
                 continue
 
             ip_addr = _extract_ip(iface)
             iface_id = iface.get("id", "")
+            cfg = config_by_id.get(iface_id)
+            if cfg is not None:
+                enabled = str(cfg.get("enabled", "0")) == "1"
+            else:
+                enabled = bool(iface.get("is_up", False))
 
             interfaces.append(
                 {
                     "name": iface_id,
                     "label": iface.get("name") or iface_id,
-                    "enabled": iface.get("is_up", False),
+                    "enabled": enabled,
                     "status": "up" if iface.get("is_up") else "down",
                     "ip_address": ip_addr,
                     "proto": iface.get("proto", ""),

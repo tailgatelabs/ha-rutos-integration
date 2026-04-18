@@ -10,6 +10,7 @@ import pytest
 
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import issue_registry as ir
 
 from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_USERNAME
 
@@ -251,6 +252,15 @@ async def test_editable_home_zone_skips_update_and_warns_once(
         ]
         assert len(editable_warnings) == 1
 
+        # A repair issue was created for this entry.
+        issue_registry = ir.async_get(hass)
+        issue = issue_registry.async_get_issue(
+            DOMAIN, f"editable_home_zone_{entry.entry_id}"
+        )
+        assert issue is not None
+        assert issue.translation_key == "editable_home_zone"
+        assert issue.severity == ir.IssueSeverity.WARNING
+
 
 async def test_editable_then_non_editable_resumes_updates(hass: HomeAssistant):
     """If the user removes the custom zone.home mid-session, updates resume."""
@@ -278,6 +288,15 @@ async def test_editable_then_non_editable_resumes_updates(hass: HomeAssistant):
         await hass.async_block_till_done()
         assert len(_set_location_calls(mock_call)) == 0
 
+        # Repair issue was raised while editable.
+        issue_registry = ir.async_get(hass)
+        assert (
+            issue_registry.async_get_issue(
+                DOMAIN, f"editable_home_zone_{entry.entry_id}"
+            )
+            is not None
+        )
+
         # User deletes custom zone; HA auto-generates a non-editable one.
         hass.states.async_set(
             "zone.home",
@@ -295,6 +314,48 @@ async def test_editable_then_non_editable_resumes_updates(hass: HomeAssistant):
                 "elevation": 15.2,
             },
         )
+
+        # Repair issue was cleared once the zone was no longer editable.
+        assert (
+            issue_registry.async_get_issue(
+                DOMAIN, f"editable_home_zone_{entry.entry_id}"
+            )
+            is None
+        )
+
+
+async def test_unload_clears_repair_issue(hass: HomeAssistant):
+    """Unloading the config entry must delete any lingering repair issue."""
+    entry = _create_entry(hass)
+    api = _mock_api(gps_position=MOCK_GPS_POSITION)
+
+    with (
+        patch("custom_components.rutos.RutOSAPI", return_value=api),
+        patch(
+            "homeassistant.core.ServiceRegistry.async_call",
+            new_callable=AsyncMock,
+        ),
+    ):
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+        hass.states.async_set(
+            "zone.home",
+            "0",
+            {"latitude": 0.0, "longitude": 0.0, "editable": True},
+        )
+        coordinator: RutOSDataUpdateCoordinator = entry.runtime_data
+        await coordinator.async_refresh()
+        await hass.async_block_till_done()
+
+        issue_registry = ir.async_get(hass)
+        issue_key = f"editable_home_zone_{entry.entry_id}"
+        assert issue_registry.async_get_issue(DOMAIN, issue_key) is not None
+
+        assert await hass.config_entries.async_unload(entry.entry_id)
+        await hass.async_block_till_done()
+
+        assert issue_registry.async_get_issue(DOMAIN, issue_key) is None
 
 
 async def test_non_editable_home_zone_updates_location(hass: HomeAssistant):

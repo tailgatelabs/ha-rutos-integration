@@ -142,5 +142,11 @@
         "name": "Failover priority"
       }
     }
+  },
+  "issues": {
+    "editable_home_zone": {
+      "title": "Custom Home zone blocks GPS location updates",
+      "description": "The RutOS integration cannot update the Home Assistant home location from the router's GPS because `zone.home` has been customized in **Settings → Areas & Zones**.\n\nHome Assistant persists a user-edited home zone in storage, and when that happens its internal listener that propagates `hass.config` changes to the `zone.home` entity is not wired — so calling the `homeassistant.set_location` service updates configuration but never moves the zone.\n\nTo fix this, open **Settings → Areas & Zones**, delete the customized **Home** zone, and let Home Assistant auto-generate the default one. GPS updates from the router will resume on the next coordinator refresh (about 30 seconds)."
+    }
   }
 }

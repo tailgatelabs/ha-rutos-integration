@@ -9,6 +9,7 @@ import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_USERNAME, Platform
 from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import RutOSAPI
@@ -81,6 +82,7 @@ def _register_home_location_listener(
     """Register a coordinator listener that updates HA home location from GPS."""
 
     warned_editable = False
+    issue_id = f"editable_home_zone_{entry.entry_id}"
 
     def _update_home_location() -> None:
         """Update home location when coordinator data changes."""
@@ -102,8 +104,8 @@ def _register_home_location_listener(
         # stored in .storage/core.zones with editable=True. In that case HA's
         # zone component does not wire its core_config_updated listener, so
         # homeassistant.set_location updates hass.config but never propagates
-        # to the zone.home entity. Warn the user once and skip the no-op
-        # service call until they remove the custom home zone.
+        # to the zone.home entity. Warn the user (log + repair) and skip the
+        # no-op service call until they remove the custom home zone.
         home_state = hass.states.get("zone.home")
         if home_state is not None and home_state.attributes.get("editable"):
             if not warned_editable:
@@ -113,9 +115,19 @@ def _register_home_location_listener(
                     "Areas & Zones so Home Assistant auto-generates a default one, "
                     "then GPS updates will resume."
                 )
+                ir.async_create_issue(
+                    hass,
+                    DOMAIN,
+                    issue_id,
+                    is_fixable=False,
+                    severity=ir.IssueSeverity.WARNING,
+                    translation_key="editable_home_zone",
+                )
                 warned_editable = True
             return
 
+        if warned_editable:
+            ir.async_delete_issue(hass, DOMAIN, issue_id)
         warned_editable = False
 
         service_data: dict[str, float] = {
@@ -131,6 +143,7 @@ def _register_home_location_listener(
         )
 
     entry.async_on_unload(coordinator.async_add_listener(_update_home_location))
+    entry.async_on_unload(lambda: ir.async_delete_issue(hass, DOMAIN, issue_id))
 
 
 def _register_services(hass: HomeAssistant) -> None:

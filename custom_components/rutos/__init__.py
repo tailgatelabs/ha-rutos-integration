@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 import voluptuous as vol
 
 from homeassistant.config_entries import ConfigEntry
@@ -17,6 +19,8 @@ from .const import (
     SERVICE_SET_FAILOVER_ORDER,
 )
 from .coordinator import RutOSDataUpdateCoordinator
+
+_LOGGER = logging.getLogger(__name__)
 
 PLATFORMS: list[Platform] = [
     Platform.SENSOR,
@@ -76,8 +80,12 @@ def _register_home_location_listener(
 ) -> None:
     """Register a coordinator listener that updates HA home location from GPS."""
 
+    warned_editable = False
+
     def _update_home_location() -> None:
         """Update home location when coordinator data changes."""
+        nonlocal warned_editable
+
         if not entry.options.get(CONF_UPDATE_HOME_LOCATION, True):
             return
 
@@ -89,6 +97,26 @@ def _register_home_location_listener(
         lon = gps.get("longitude")
         if lat is None or lon is None:
             return
+
+        # If zone.home has been customized in Settings > Areas & Zones, it is
+        # stored in .storage/core.zones with editable=True. In that case HA's
+        # zone component does not wire its core_config_updated listener, so
+        # homeassistant.set_location updates hass.config but never propagates
+        # to the zone.home entity. Warn the user once and skip the no-op
+        # service call until they remove the custom home zone.
+        home_state = hass.states.get("zone.home")
+        if home_state is not None and home_state.attributes.get("editable"):
+            if not warned_editable:
+                _LOGGER.warning(
+                    "zone.home is user-customized (editable=True) and cannot be "
+                    "updated from GPS. Remove the custom home zone in Settings > "
+                    "Areas & Zones so Home Assistant auto-generates a default one, "
+                    "then GPS updates will resume."
+                )
+                warned_editable = True
+            return
+
+        warned_editable = False
 
         service_data: dict[str, float] = {
             "latitude": lat,

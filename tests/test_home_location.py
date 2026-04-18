@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import logging
+
 from unittest.mock import AsyncMock, call, patch
+
+import pytest
 
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
@@ -196,6 +200,137 @@ async def test_gps_missing_lat_lon_no_update(hass: HomeAssistant):
 
         location_calls = _set_location_calls(mock_call)
         assert len(location_calls) == 0
+
+
+async def test_editable_home_zone_skips_update_and_warns_once(
+    hass: HomeAssistant, caplog: pytest.LogCaptureFixture
+):
+    """A user-customized zone.home (editable=True) must block updates and warn once."""
+    entry = _create_entry(hass)
+    api = _mock_api(gps_position=MOCK_GPS_POSITION)
+
+    with (
+        patch("custom_components.rutos.RutOSAPI", return_value=api),
+        patch(
+            "homeassistant.core.ServiceRegistry.async_call",
+            new_callable=AsyncMock,
+        ) as mock_call,
+    ):
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+        hass.states.async_set(
+            "zone.home",
+            "0",
+            {
+                "latitude": 40.7128,
+                "longitude": -74.0060,
+                "radius": 150,
+                "editable": True,
+                "friendly_name": "Home",
+            },
+        )
+
+        coordinator: RutOSDataUpdateCoordinator = entry.runtime_data
+        with caplog.at_level(logging.WARNING, logger="custom_components.rutos"):
+            await coordinator.async_refresh()
+            await hass.async_block_till_done()
+            await coordinator.async_refresh()
+            await hass.async_block_till_done()
+
+        # No set_location calls fired while zone.home is editable.
+        assert len(_set_location_calls(mock_call)) == 0
+
+        # Warning was logged exactly once, even across multiple refreshes.
+        editable_warnings = [
+            r
+            for r in caplog.records
+            if r.name == "custom_components.rutos"
+            and r.levelno == logging.WARNING
+            and "editable" in r.getMessage()
+        ]
+        assert len(editable_warnings) == 1
+
+
+async def test_editable_then_non_editable_resumes_updates(hass: HomeAssistant):
+    """If the user removes the custom zone.home mid-session, updates resume."""
+    entry = _create_entry(hass)
+    api = _mock_api(gps_position=MOCK_GPS_POSITION)
+
+    with (
+        patch("custom_components.rutos.RutOSAPI", return_value=api),
+        patch(
+            "homeassistant.core.ServiceRegistry.async_call",
+            new_callable=AsyncMock,
+        ) as mock_call,
+    ):
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+        # Start with an editable zone.home — update should be skipped.
+        hass.states.async_set(
+            "zone.home",
+            "0",
+            {"latitude": 0.0, "longitude": 0.0, "editable": True},
+        )
+        coordinator: RutOSDataUpdateCoordinator = entry.runtime_data
+        await coordinator.async_refresh()
+        await hass.async_block_till_done()
+        assert len(_set_location_calls(mock_call)) == 0
+
+        # User deletes custom zone; HA auto-generates a non-editable one.
+        hass.states.async_set(
+            "zone.home",
+            "0",
+            {"latitude": 0.0, "longitude": 0.0, "editable": False},
+        )
+        await coordinator.async_refresh()
+        await hass.async_block_till_done()
+        mock_call.assert_any_call(
+            "homeassistant",
+            "set_location",
+            {
+                "latitude": 37.7749,
+                "longitude": -122.4194,
+                "elevation": 15.2,
+            },
+        )
+
+
+async def test_non_editable_home_zone_updates_location(hass: HomeAssistant):
+    """A non-editable zone.home (auto-generated) must still get updated."""
+    entry = _create_entry(hass)
+    api = _mock_api(gps_position=MOCK_GPS_POSITION)
+
+    with (
+        patch("custom_components.rutos.RutOSAPI", return_value=api),
+        patch(
+            "homeassistant.core.ServiceRegistry.async_call",
+            new_callable=AsyncMock,
+        ) as mock_call,
+    ):
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+        hass.states.async_set(
+            "zone.home",
+            "0",
+            {"latitude": 0.0, "longitude": 0.0, "editable": False},
+        )
+
+        coordinator: RutOSDataUpdateCoordinator = entry.runtime_data
+        await coordinator.async_refresh()
+        await hass.async_block_till_done()
+
+        mock_call.assert_any_call(
+            "homeassistant",
+            "set_location",
+            {
+                "latitude": 37.7749,
+                "longitude": -122.4194,
+                "elevation": 15.2,
+            },
+        )
 
 
 async def test_altitude_none_omits_elevation(hass: HomeAssistant):

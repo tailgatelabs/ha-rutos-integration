@@ -89,27 +89,51 @@
         "name": "{limit} data usage"
       },
       "modem_rssi": {
+        "name": "RSSI"
+      },
+      "modem_rssi_multi": {
         "name": "{modem} RSSI"
       },
       "modem_rsrp": {
+        "name": "RSRP"
+      },
+      "modem_rsrp_multi": {
         "name": "{modem} RSRP"
       },
       "modem_rsrq": {
+        "name": "RSRQ"
+      },
+      "modem_rsrq_multi": {
         "name": "{modem} RSRQ"
       },
       "modem_sinr": {
+        "name": "SINR"
+      },
+      "modem_sinr_multi": {
         "name": "{modem} SINR"
       },
       "modem_network_type": {
+        "name": "Network type"
+      },
+      "modem_network_type_multi": {
         "name": "{modem} network type"
       },
       "modem_band": {
+        "name": "Band"
+      },
+      "modem_band_multi": {
         "name": "{modem} band"
       },
       "modem_operator": {
+        "name": "Operator"
+      },
+      "modem_operator_multi": {
         "name": "{modem} operator"
       },
       "modem_active_sim": {
+        "name": "Active SIM"
+      },
+      "modem_active_sim_multi": {
         "name": "{modem} active SIM"
       }
     },
@@ -118,9 +142,15 @@
         "name": "Clear data usage"
       },
       "modem_reboot": {
+        "name": "Reboot modem"
+      },
+      "modem_reboot_multi": {
         "name": "Reboot {modem}"
       },
       "modem_switch_sim": {
+        "name": "Switch SIM"
+      },
+      "modem_switch_sim_multi": {
         "name": "Switch SIM {modem}"
       }
     },
@@ -129,6 +159,9 @@
         "name": "Internet connectivity"
       },
       "modem_roaming": {
+        "name": "Roaming"
+      },
+      "modem_roaming_multi": {
         "name": "{modem} roaming"
       }
     },

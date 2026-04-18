@@ -67,7 +67,9 @@ class RutOSModemRebootButton(RutOSEntity, ButtonEntity):
         self._attr_unique_id = (
             f"{coordinator.data.device_info.get('serial', '')}_{modem_id}_reboot"
         )
-        self._attr_translation_placeholders = {"modem": modem_id}
+        if len(coordinator.data.modems) > 1:
+            self._attr_translation_key = "modem_reboot_multi"
+            self._attr_translation_placeholders = {"modem": modem_id}
 
     async def async_press(self) -> None:
         """Handle the button press."""
@@ -91,7 +93,9 @@ class RutOSModemSwitchSimButton(RutOSEntity, ButtonEntity):
         self._attr_unique_id = (
             f"{coordinator.data.device_info.get('serial', '')}_{modem_id}_switch_sim"
         )
-        self._attr_translation_placeholders = {"modem": modem_id}
+        if len(coordinator.data.modems) > 1:
+            self._attr_translation_key = "modem_switch_sim_multi"
+            self._attr_translation_placeholders = {"modem": modem_id}
 
     async def async_press(self) -> None:
         """Handle the button press."""

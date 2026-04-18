@@ -354,7 +354,9 @@ class RutOSModemSignalSensor(RutOSEntity, SensorEntity):
         self.entity_description = description
         self._modem_id = modem_id
         self._attr_unique_id = f"{coordinator.data.device_info.get('serial', '')}_{modem_id}_{description.key}"
-        self._attr_translation_placeholders = {"modem": modem_id}
+        if len(coordinator.data.modems) > 1:
+            self._attr_translation_key = f"{description.translation_key}_multi"
+            self._attr_translation_placeholders = {"modem": modem_id}
 
     def _find_modem(self) -> dict[str, Any] | None:
         """Find modem data by id."""
@@ -388,7 +390,9 @@ class RutOSModemStatusSensor(RutOSEntity, SensorEntity):
         self.entity_description = description
         self._modem_id = modem_id
         self._attr_unique_id = f"{coordinator.data.device_info.get('serial', '')}_{modem_id}_{description.key}"
-        self._attr_translation_placeholders = {"modem": modem_id}
+        if len(coordinator.data.modems) > 1:
+            self._attr_translation_key = f"{description.translation_key}_multi"
+            self._attr_translation_placeholders = {"modem": modem_id}
 
     def _find_modem(self) -> dict[str, Any] | None:
         """Find modem data by id."""

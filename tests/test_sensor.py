@@ -315,3 +315,46 @@ class TestRutOSModemStatusSensor:
         desc = MODEM_STATUS_SENSORS[0]
         sensor = RutOSModemStatusSensor(mock_coordinator, desc, "modem1")
         assert sensor.unique_id == "1234567890_modem1_operator"
+
+
+class TestModemSensorNaming:
+    """Tests for single-vs-multi modem label selection (issue #26)."""
+
+    def test_signal_single_modem_no_placeholder(
+        self, mock_coordinator: RutOSDataUpdateCoordinator
+    ):
+        """Single modem: use base translation key with no placeholder."""
+        desc = MODEM_SIGNAL_SENSORS[0]  # rssi
+        sensor = RutOSModemSignalSensor(mock_coordinator, desc, "modem1")
+        assert sensor.translation_key == "modem_rssi"
+        assert not sensor.translation_placeholders
+
+    def test_signal_multi_modem_uses_multi_key(
+        self, mock_coordinator: RutOSDataUpdateCoordinator
+    ):
+        """Multi modem: use _multi translation key with {modem} placeholder."""
+        mock_coordinator.data.modems = [{"id": "2-1"}, {"id": "3-1"}]
+        desc = MODEM_SIGNAL_SENSORS[0]
+        sensor = RutOSModemSignalSensor(mock_coordinator, desc, "2-1")
+        assert sensor.translation_key == "modem_rssi_multi"
+        assert sensor.translation_placeholders == {"modem": "2-1"}
+        assert sensor.unique_id == "1234567890_2-1_rssi"
+
+    def test_status_single_modem_no_placeholder(
+        self, mock_coordinator: RutOSDataUpdateCoordinator
+    ):
+        """Single modem: operator sensor uses base key with no placeholder."""
+        desc = MODEM_STATUS_SENSORS[0]  # operator
+        sensor = RutOSModemStatusSensor(mock_coordinator, desc, "modem1")
+        assert sensor.translation_key == "modem_operator"
+        assert not sensor.translation_placeholders
+
+    def test_status_multi_modem_uses_multi_key(
+        self, mock_coordinator: RutOSDataUpdateCoordinator
+    ):
+        """Multi modem: operator sensor uses _multi key with placeholder."""
+        mock_coordinator.data.modems = [{"id": "2-1"}, {"id": "3-1"}]
+        desc = MODEM_STATUS_SENSORS[0]
+        sensor = RutOSModemStatusSensor(mock_coordinator, desc, "2-1")
+        assert sensor.translation_key == "modem_operator_multi"
+        assert sensor.translation_placeholders == {"modem": "2-1"}

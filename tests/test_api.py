@@ -411,7 +411,7 @@ class TestGetWanInterfaces:
             assert result[0]["metric"] < result[1]["metric"]
 
     async def test_get_wan_interfaces_extracts_ip(self, api_client):
-        """Test IP address is extracted from ipv4-address field."""
+        """Test IP address is extracted from ipv4-address field with CIDR."""
         interfaces = [
             {
                 "id": "wan",
@@ -431,10 +431,34 @@ class TestGetWanInterfaces:
 
             result = await api_client.get_wan_interfaces()
 
-            assert result[0]["ip_address"] == "192.168.1.100"
+            assert result[0]["ip_address"] == "192.168.1.100/24"
+
+    async def test_get_wan_interfaces_falls_back_to_ipaddrs(self, api_client):
+        """Mobile WANs populate ipaddrs[] (with CIDR) instead of ipv4-address."""
+        interfaces = [
+            {
+                "id": "mob1s2a1",
+                "area_type": "wan",
+                "is_up": True,
+                "proto": "wwan",
+                "uptime": 55093,
+                "metric": 2,
+                "ipv4-address": [],
+                "ipaddrs": ["10.153.142.57/32"],
+                "device": "wwan0",
+                "l3_device": "wwan0",
+            },
+        ]
+        with aioresponses() as m:
+            m.post(_url("/login"), payload=_login_success())
+            m.get(_url("/interfaces/status"), payload=_success(interfaces))
+
+            result = await api_client.get_wan_interfaces()
+
+            assert result[0]["ip_address"] == "10.153.142.57/32"
 
     async def test_get_wan_interfaces_no_ip(self, api_client):
-        """Test IP is None when no ipv4-address."""
+        """Test IP is None when neither ipv4-address nor ipaddrs is populated."""
         interfaces = [
             {
                 "id": "mob1s1a1",
@@ -851,34 +875,52 @@ class TestGetModems:
     """Tests for get_modems."""
 
     async def test_get_modems_success(self, api_client):
-        """Test parsing modem list from signal status."""
-        signal_data = [
-            {"id": "modem1", "rssi": -65},
-            {"id": "modem2", "rssi": -70},
+        """Test parsing modem list from /modems/status (top-level id)."""
+        status_data = [
+            {"id": "2-1", "operator": "Rogers"},
+            {"id": "3-1", "operator": "Bell"},
         ]
         with aioresponses() as m:
             m.post(_url("/login"), payload=_login_success())
-            m.get(_url("/modems/signal/status"), payload=_success(signal_data))
+            m.get(_url("/modems/status"), payload=_success(status_data))
 
             result = await api_client.get_modems()
 
             assert len(result) == 2
-            assert result[0]["id"] == "modem1"
-            assert result[1]["id"] == "modem2"
+            assert result[0]["id"] == "2-1"
+            assert result[1]["id"] == "3-1"
+
+    async def test_get_modems_falls_back_to_signal_status(self, api_client):
+        """If /modems/status errors, fall back to /modems/signal/status.
+
+        /modems/signal/status uses 'modem' as the id key instead of 'id'.
+        """
+        with aioresponses() as m:
+            m.post(_url("/login"), payload=_login_success())
+            m.get(_url("/modems/status"), payload=_error("unavailable"))
+            m.get(
+                _url("/modems/signal/status"),
+                payload=_success([{"modem": "2-1"}, {"modem": "3-1"}]),
+            )
+
+            result = await api_client.get_modems()
+
+            assert [r["id"] for r in result] == ["2-1", "3-1"]
 
     async def test_get_modems_empty(self, api_client):
         """Test returns empty list when no modems."""
         with aioresponses() as m:
             m.post(_url("/login"), payload=_login_success())
-            m.get(_url("/modems/signal/status"), payload=_success([]))
+            m.get(_url("/modems/status"), payload=_success([]))
 
             result = await api_client.get_modems()
             assert result == []
 
     async def test_get_modems_api_error(self, api_client):
-        """Test returns empty list on API error."""
+        """Test returns empty list when both endpoints fail."""
         with aioresponses() as m:
             m.post(_url("/login"), payload=_login_success())
+            m.get(_url("/modems/status"), payload=_error("Service unavailable"))
             m.get(
                 _url("/modems/signal/status"),
                 payload=_error("Service unavailable"),
@@ -891,44 +933,107 @@ class TestGetModems:
 class TestGetModemSignal:
     """Tests for get_modem_signal."""
 
-    async def test_get_modem_signal_success(self, api_client):
-        """Test parsing of modem signal response."""
-        signal_data = [
+    async def test_get_modem_signal_from_status(self, api_client):
+        """Primary path: /modems/status has flat signal fields."""
+        status_data = [
             {
-                "id": "modem1",
-                "rssi": -65,
-                "rsrp": -95,
-                "rsrq": -10,
-                "sinr": 12,
-                "network_type": "LTE",
-                "band": "B7",
-                "channel_number": 3100,
+                "id": "2-1",
+                "rssi": -73,
+                "rsrp": -98,
+                "rsrq": -8,
+                "sinr": 10,
+                "band": "LTE B12",
+                "conntype": "5G (NSA)",
+                "ntype": "5G-NSA",
+                "ca_signal": [{"frequency": 5060}],
             },
         ]
         with aioresponses() as m:
             m.post(_url("/login"), payload=_login_success())
+            m.get(_url("/modems/status"), payload=_success(status_data))
+
+            result = await api_client.get_modem_signal()
+
+            assert len(result) == 1
+            assert result[0]["id"] == "2-1"
+            assert result[0]["rssi"] == -73
+            assert result[0]["rsrp"] == -98
+            assert result[0]["rsrq"] == -8
+            assert result[0]["sinr"] == 10
+            assert result[0]["band"] == "LTE B12"
+            # conntype wins over ntype for human-readable network_type
+            assert result[0]["network_type"] == "5G (NSA)"
+            assert result[0]["channel_number"] == 5060
+
+    async def test_get_modem_signal_network_type_ntype_fallback(self, api_client):
+        """When conntype is absent, fall back to ntype."""
+        status_data = [{"id": "2-1", "rssi": -65, "ntype": "LTE-A"}]
+        with aioresponses() as m:
+            m.post(_url("/login"), payload=_login_success())
+            m.get(_url("/modems/status"), payload=_success(status_data))
+
+            result = await api_client.get_modem_signal()
+
+            assert result[0]["network_type"] == "LTE-A"
+
+    async def test_get_modem_signal_nested_signal_fallback(self, api_client):
+        """Fall back to /modems/signal/status nested 'signal' array when status fails."""
+        signal_data = [
+            {
+                "modem": "2-1",
+                "signal": [
+                    {
+                        "rssi": -80,
+                        "rsrp": -100,
+                        "rsrq": -12,
+                        "sinr": 5,
+                        "band": "LTE B12",
+                        "network_type": 24,
+                        "channel_number": 5060,
+                        "timestamp": "1776519700",
+                    },
+                    {
+                        "rssi": -72,
+                        "rsrp": -98,
+                        "rsrq": -8,
+                        "sinr": 9,
+                        "band": "LTE B12",
+                        "network_type": 24,
+                        "channel_number": 5060,
+                        "timestamp": "1776523359",
+                    },
+                ],
+            }
+        ]
+        with aioresponses() as m:
+            m.post(_url("/login"), payload=_login_success())
+            m.get(_url("/modems/status"), payload=_error("unavailable"))
             m.get(_url("/modems/signal/status"), payload=_success(signal_data))
 
             result = await api_client.get_modem_signal()
 
             assert len(result) == 1
-            assert result[0]["id"] == "modem1"
-            assert result[0]["rsrp"] == -95
-            assert result[0]["network_type"] == "LTE"
+            assert result[0]["id"] == "2-1"
+            # Latest sample (last element of signal[]) should win
+            assert result[0]["rssi"] == -72
+            assert result[0]["rsrp"] == -98
+            assert result[0]["channel_number"] == 5060
 
     async def test_get_modem_signal_empty(self, api_client):
-        """Test returns empty list when no modems."""
+        """Test returns empty list when no modems on either endpoint."""
         with aioresponses() as m:
             m.post(_url("/login"), payload=_login_success())
+            m.get(_url("/modems/status"), payload=_success([]))
             m.get(_url("/modems/signal/status"), payload=_success([]))
 
             result = await api_client.get_modem_signal()
             assert result == []
 
     async def test_get_modem_signal_api_error(self, api_client):
-        """Test returns empty list on API error."""
+        """Test returns empty list when both endpoints error."""
         with aioresponses() as m:
             m.post(_url("/login"), payload=_login_success())
+            m.get(_url("/modems/status"), payload=_error("Service unavailable"))
             m.get(
                 _url("/modems/signal/status"),
                 payload=_error("Service unavailable"),
@@ -938,9 +1043,10 @@ class TestGetModemSignal:
             assert result == []
 
     async def test_get_modem_signal_non_list(self, api_client):
-        """Test returns empty list for non-list response."""
+        """Test returns empty list when both endpoints return non-list."""
         with aioresponses() as m:
             m.post(_url("/login"), payload=_login_success())
+            m.get(_url("/modems/status"), payload=_success({"unexpected": True}))
             m.get(_url("/modems/signal/status"), payload=_success({"unexpected": True}))
 
             result = await api_client.get_modem_signal()

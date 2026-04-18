@@ -6,11 +6,20 @@ import logging
 
 import voluptuous as vol
 
+from homeassistant.components.zone import DATA_ZONE_STORAGE_COLLECTION
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_USERNAME, Platform
+from homeassistant.const import (
+    CONF_HOST,
+    CONF_LATITUDE,
+    CONF_LONGITUDE,
+    CONF_NAME,
+    CONF_PASSWORD,
+    CONF_USERNAME,
+    Platform,
+)
 from homeassistant.core import HomeAssistant, ServiceCall
-from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.util import slugify
 
 from .api import RutOSAPI
 from .const import (
@@ -81,13 +90,8 @@ def _register_home_location_listener(
 ) -> None:
     """Register a coordinator listener that updates HA home location from GPS."""
 
-    warned_editable = False
-    issue_id = f"editable_home_zone_{entry.entry_id}"
-
     def _update_home_location() -> None:
         """Update home location when coordinator data changes."""
-        nonlocal warned_editable
-
         if not entry.options.get(CONF_UPDATE_HOME_LOCATION, True):
             return
 
@@ -100,50 +104,59 @@ def _register_home_location_listener(
         if lat is None or lon is None:
             return
 
-        # If zone.home has been customized in Settings > Areas & Zones, it is
-        # stored in .storage/core.zones with editable=True. In that case HA's
-        # zone component does not wire its core_config_updated listener, so
-        # homeassistant.set_location updates hass.config but never propagates
-        # to the zone.home entity. Warn the user (log + repair) and skip the
-        # no-op service call until they remove the custom home zone.
-        home_state = hass.states.get("zone.home")
-        if home_state is not None and home_state.attributes.get("editable"):
-            if not warned_editable:
-                _LOGGER.warning(
-                    "zone.home is user-customized (editable=True) and cannot be "
-                    "updated from GPS. Remove the custom home zone in Settings > "
-                    "Areas & Zones so Home Assistant auto-generates a default one, "
-                    "then GPS updates will resume."
-                )
-                ir.async_create_issue(
-                    hass,
-                    DOMAIN,
-                    issue_id,
-                    is_fixable=False,
-                    severity=ir.IssueSeverity.WARNING,
-                    translation_key="editable_home_zone",
-                )
-                warned_editable = True
-            return
-
-        if warned_editable:
-            ir.async_delete_issue(hass, DOMAIN, issue_id)
-        warned_editable = False
-
-        service_data: dict[str, float] = {
-            "latitude": lat,
-            "longitude": lon,
-        }
         altitude = gps.get("altitude")
-        if altitude is not None:
-            service_data["elevation"] = altitude
-
-        hass.async_create_task(
-            hass.services.async_call("homeassistant", "set_location", service_data)
-        )
+        hass.async_create_task(_async_apply_home_location(hass, lat, lon, altitude))
 
     entry.async_on_unload(coordinator.async_add_listener(_update_home_location))
-    entry.async_on_unload(lambda: ir.async_delete_issue(hass, DOMAIN, issue_id))
+
+
+async def _async_apply_home_location(
+    hass: HomeAssistant,
+    lat: float,
+    lon: float,
+    altitude: float | None,
+) -> None:
+    """Push GPS coordinates to hass.config and, if needed, the stored zone.home."""
+    service_data: dict[str, float] = {"latitude": lat, "longitude": lon}
+    if altitude is not None:
+        service_data["elevation"] = altitude
+
+    # Always update hass.config.latitude/longitude/elevation — other
+    # integrations read these, and for a non-editable zone.home this also
+    # propagates to the entity via the zone component's listener.
+    await hass.services.async_call("homeassistant", "set_location", service_data)
+
+    home_state = hass.states.get("zone.home")
+    if home_state is None or not home_state.attributes.get("editable"):
+        return
+
+    # A user-customized zone.home is stored in .storage/core.zones with
+    # editable=True. For stored zones HA skips wiring its
+    # core_config_updated listener, so the set_location call above updates
+    # hass.config but never moves the zone.home entity. Update the stored
+    # zone directly through the zone storage collection — this preserves the
+    # user's radius, icon, and passive settings while refreshing the
+    # coordinates.
+    await _async_update_stored_home_zone(hass, lat, lon)
+
+
+async def _async_update_stored_home_zone(
+    hass: HomeAssistant, lat: float, lon: float
+) -> None:
+    """Update the stored zone.home entry via the zone storage collection."""
+    try:
+        storage_collection = hass.data.get(DATA_ZONE_STORAGE_COLLECTION)
+        if storage_collection is None:
+            return
+        for item_id, item in storage_collection.data.items():
+            if slugify(item.get(CONF_NAME, "")) == "home":
+                await storage_collection.async_update_item(
+                    item_id,
+                    {CONF_LATITUDE: lat, CONF_LONGITUDE: lon},
+                )
+                return
+    except Exception as err:  # noqa: BLE001 - defensive against HA internal API churn
+        _LOGGER.warning("Could not update stored zone.home from GPS: %s", err)
 
 
 def _register_services(hass: HomeAssistant) -> None:

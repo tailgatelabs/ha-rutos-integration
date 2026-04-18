@@ -14,6 +14,26 @@ from .const import API_PATH, SESSION_REFRESH_MARGIN
 _LOGGER = logging.getLogger(__name__)
 
 
+def _extract_ip(iface: dict[str, Any]) -> str | None:
+    """Extract a WAN IPv4 address in CIDR notation from an interface entry.
+
+    Different proto types report addresses differently: wired/DHCP interfaces
+    populate ``ipv4-address: [{address, mask}]``, while mobile interfaces on
+    some firmwares only populate ``ipaddrs: ["a.b.c.d/32"]``. CIDR is kept so
+    carrier-assigned subnet size is preserved.
+    """
+    ipv4_addrs = iface.get("ipv4-address") or []
+    if ipv4_addrs and isinstance(ipv4_addrs[0], dict):
+        addr = ipv4_addrs[0].get("address")
+        mask = ipv4_addrs[0].get("mask")
+        if addr:
+            return f"{addr}/{mask}" if mask is not None else addr
+    ipaddrs = iface.get("ipaddrs") or []
+    if ipaddrs and isinstance(ipaddrs[0], str) and ipaddrs[0]:
+        return ipaddrs[0]
+    return None
+
+
 class RutOSAPIError(Exception):
     """Base exception for RutOS API errors."""
 
@@ -207,8 +227,7 @@ class RutOSAPI:
             if iface.get("area_type") != "wan":
                 continue
 
-            ipv4_addrs = iface.get("ipv4-address", [])
-            ip_addr = ipv4_addrs[0].get("address") if ipv4_addrs else None
+            ip_addr = _extract_ip(iface)
 
             interfaces.append(
                 {
@@ -286,25 +305,12 @@ class RutOSAPI:
     async def get_modems(self) -> list[dict[str, Any]]:
         """Fetch list of available modems."""
         try:
-            data = await self.get("/modems/signal/status")
+            data = await self.get("/modems/status")
         except RutOSAPIError:
-            return []
-
-        if not isinstance(data, list):
-            return []
-
-        return [
-            {"id": modem.get("id", "")}
-            for modem in data
-            if isinstance(modem, dict) and modem.get("id")
-        ]
-
-    async def get_modem_signal(self) -> list[dict[str, Any]]:
-        """Fetch signal strength data for all modems."""
-        try:
-            data = await self.get("/modems/signal/status")
-        except RutOSAPIError:
-            return []
+            try:
+                data = await self.get("/modems/signal/status")
+            except RutOSAPIError:
+                return []
 
         if not isinstance(data, list):
             return []
@@ -313,17 +319,74 @@ class RutOSAPI:
         for modem in data:
             if not isinstance(modem, dict):
                 continue
-            modem_id = modem.get("id", "")
+            # /modems/status uses "id"; /modems/signal/status uses "modem"
+            modem_id = modem.get("id") or modem.get("modem")
+            if modem_id:
+                modems.append({"id": modem_id})
+        return modems
+
+    async def get_modem_signal(self) -> list[dict[str, Any]]:
+        """Fetch signal strength data for all modems.
+
+        Prefers flat top-level fields from /modems/status (rssi, rsrp, rsrq,
+        sinr, band, conntype). Falls back to /modems/signal/status where
+        metrics live in a nested 'signal' array of historical samples.
+        """
+        try:
+            status = await self.get("/modems/status")
+        except RutOSAPIError:
+            status = None
+
+        if isinstance(status, list) and status:
+            modems: list[dict[str, Any]] = []
+            for modem in status:
+                if not isinstance(modem, dict):
+                    continue
+                channel = None
+                ca_signal = modem.get("ca_signal") or []
+                if ca_signal and isinstance(ca_signal[0], dict):
+                    channel = ca_signal[0].get("frequency")
+                modems.append(
+                    {
+                        "id": modem.get("id") or modem.get("modem") or "",
+                        "rssi": modem.get("rssi"),
+                        "rsrp": modem.get("rsrp"),
+                        "rsrq": modem.get("rsrq"),
+                        "sinr": modem.get("sinr"),
+                        "network_type": modem.get("conntype") or modem.get("ntype"),
+                        "band": modem.get("band"),
+                        "channel_number": channel,
+                    }
+                )
+            return modems
+
+        try:
+            sig = await self.get("/modems/signal/status")
+        except RutOSAPIError:
+            return []
+        if not isinstance(sig, list):
+            return []
+
+        modems = []
+        for entry in sig:
+            if not isinstance(entry, dict):
+                continue
+            modem_id = entry.get("id") or entry.get("modem") or ""
+            samples = entry.get("signal")
+            if isinstance(samples, list) and samples and isinstance(samples[-1], dict):
+                src = samples[-1]
+            else:
+                src = entry
             modems.append(
                 {
                     "id": modem_id,
-                    "rssi": modem.get("rssi"),
-                    "rsrp": modem.get("rsrp"),
-                    "rsrq": modem.get("rsrq"),
-                    "sinr": modem.get("sinr"),
-                    "network_type": modem.get("network_type"),
-                    "band": modem.get("band"),
-                    "channel_number": modem.get("channel_number"),
+                    "rssi": src.get("rssi"),
+                    "rsrp": src.get("rsrp"),
+                    "rsrq": src.get("rsrq"),
+                    "sinr": src.get("sinr"),
+                    "network_type": src.get("network_type"),
+                    "band": src.get("band"),
+                    "channel_number": src.get("channel_number"),
                 }
             )
         return modems

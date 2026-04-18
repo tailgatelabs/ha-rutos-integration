@@ -63,6 +63,23 @@ class TestRutOSSensorEntity:
         sensor = RutOSSensorEntity(mock_coordinator, desc, "wan1")
         assert sensor.unique_id == "1234567890_wan1_status"
 
+    def test_label_overrides_placeholder_keeps_unique_id(
+        self, mock_coordinator: RutOSDataUpdateCoordinator
+    ):
+        """Issue #18: router GUI label drives display; UCI id drives unique_id."""
+        desc = INTERFACE_SENSORS[0]
+        sensor = RutOSSensorEntity(mock_coordinator, desc, "wan2", "wifi1")
+        assert sensor.unique_id == "1234567890_wan2_status"
+        assert sensor.translation_placeholders == {"interface": "wifi1"}
+
+    def test_label_defaults_to_interface_name(
+        self, mock_coordinator: RutOSDataUpdateCoordinator
+    ):
+        """When no label is passed, placeholder falls back to UCI id."""
+        desc = INTERFACE_SENSORS[0]
+        sensor = RutOSSensorEntity(mock_coordinator, desc, "wan1")
+        assert sensor.translation_placeholders == {"interface": "wan1"}
+
     def test_device_info(self, mock_coordinator: RutOSDataUpdateCoordinator):
         """Test device_info contains correct identifiers and manufacturer."""
         desc = INTERFACE_SENSORS[0]

@@ -457,6 +457,37 @@ class TestGetWanInterfaces:
 
             assert result[0]["ip_address"] == "10.153.142.57/32"
 
+    async def test_get_wan_interfaces_uses_name_for_label(self, api_client):
+        """Issue #18: `label` comes from router `name` (GUI label), `name` stays UCI id."""
+        interfaces = [
+            {
+                "id": "wan2",
+                "name": "wifi1",
+                "area_type": "wan",
+                "is_up": True,
+                "proto": "dhcp",
+                "uptime": 10,
+                "metric": 1,
+            },
+            {
+                "id": "wan1",
+                "area_type": "wan",
+                "is_up": True,
+                "proto": "dhcp",
+                "uptime": 20,
+                "metric": 2,
+            },
+        ]
+        with aioresponses() as m:
+            m.post(_url("/login"), payload=_login_success())
+            m.get(_url("/interfaces/status"), payload=_success(interfaces))
+
+            result = await api_client.get_wan_interfaces()
+
+            by_name = {i["name"]: i for i in result}
+            assert by_name["wan2"]["label"] == "wifi1"
+            assert by_name["wan1"]["label"] == "wan1"
+
     async def test_get_wan_interfaces_no_ip(self, api_client):
         """Test IP is None when neither ipv4-address nor ipaddrs is populated."""
         interfaces = [

@@ -212,7 +212,7 @@ async def async_setup_entry(
     """Set up RutOS sensors based on a config entry."""
     coordinator: RutOSDataUpdateCoordinator = entry.runtime_data
     entities: list[SensorEntity] = [
-        RutOSSensorEntity(coordinator, description, iface["name"])
+        RutOSSensorEntity(coordinator, description, iface["name"], iface["label"])
         for iface in coordinator.data.wan_interfaces
         for description in INTERFACE_SENSORS
     ]
@@ -261,13 +261,14 @@ class RutOSSensorEntity(RutOSEntity, SensorEntity):
         coordinator: RutOSDataUpdateCoordinator,
         description: RutOSSensorEntityDescription,
         interface_name: str,
+        label: str | None = None,
     ) -> None:
         """Initialize the sensor."""
         super().__init__(coordinator)
         self.entity_description = description
         self._interface_name = interface_name
         self._attr_unique_id = f"{coordinator.data.device_info.get('serial', '')}_{interface_name}_{description.key}"
-        self._attr_translation_placeholders = {"interface": interface_name}
+        self._attr_translation_placeholders = {"interface": label or interface_name}
 
     @property
     def native_value(self) -> str | int | float | None:
@@ -433,5 +434,5 @@ class RutOSActiveWANSensor(RutOSEntity, SensorEntity):
         for iface in self.coordinator.data.wan_interfaces:
             if iface.get("status") == "up":
                 name = iface["name"]
-                return self._iface_labels.get(name, name)
+                return self._iface_labels.get(name) or iface.get("label") or name
         return None

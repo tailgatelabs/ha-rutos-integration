@@ -10,6 +10,7 @@ from custom_components.rutos.api import RutOSAPIError
 from custom_components.rutos.button import (
     RutOSClearDataUsageButton,
     RutOSModemRebootButton,
+    RutOSModemSwitchSimButton,
 )
 from custom_components.rutos.coordinator import RutOSDataUpdateCoordinator
 
@@ -62,9 +63,45 @@ class TestRutOSModemRebootButton:
         with pytest.raises(RutOSAPIError):
             await button.async_press()
 
-    def test_translation_placeholders(
+    def test_single_modem_no_placeholder(
         self, mock_coordinator: RutOSDataUpdateCoordinator
     ):
-        """Test translation placeholders include modem id."""
+        """Single modem: base translation key, no placeholder (issue #26)."""
         button = RutOSModemRebootButton(mock_coordinator, "modem1")
-        assert button.translation_placeholders == {"modem": "modem1"}
+        assert button.translation_key == "modem_reboot"
+        assert not button.translation_placeholders
+
+    def test_multi_modem_uses_multi_key(
+        self, mock_coordinator: RutOSDataUpdateCoordinator
+    ):
+        """Multi modem: _multi translation key with {modem} placeholder."""
+        mock_coordinator.data.modems = [{"id": "2-1"}, {"id": "3-1"}]
+        button = RutOSModemRebootButton(mock_coordinator, "2-1")
+        assert button.translation_key == "modem_reboot_multi"
+        assert button.translation_placeholders == {"modem": "2-1"}
+
+
+class TestRutOSModemSwitchSimButton:
+    """Tests for the modem switch SIM button (issue #26 naming)."""
+
+    def test_unique_id(self, mock_coordinator: RutOSDataUpdateCoordinator):
+        """Test unique_id is {serial}_{modem}_switch_sim."""
+        button = RutOSModemSwitchSimButton(mock_coordinator, "modem1")
+        assert button.unique_id == "1234567890_modem1_switch_sim"
+
+    def test_single_modem_no_placeholder(
+        self, mock_coordinator: RutOSDataUpdateCoordinator
+    ):
+        """Single modem: base translation key, no placeholder."""
+        button = RutOSModemSwitchSimButton(mock_coordinator, "modem1")
+        assert button.translation_key == "modem_switch_sim"
+        assert not button.translation_placeholders
+
+    def test_multi_modem_uses_multi_key(
+        self, mock_coordinator: RutOSDataUpdateCoordinator
+    ):
+        """Multi modem: _multi translation key with placeholder."""
+        mock_coordinator.data.modems = [{"id": "2-1"}, {"id": "3-1"}]
+        button = RutOSModemSwitchSimButton(mock_coordinator, "2-1")
+        assert button.translation_key == "modem_switch_sim_multi"
+        assert button.translation_placeholders == {"modem": "2-1"}

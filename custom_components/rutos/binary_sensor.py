@@ -59,7 +59,9 @@ class RutOSModemRoamingSensor(RutOSEntity, BinarySensorEntity):
         self._attr_unique_id = (
             f"{coordinator.data.device_info.get('serial', '')}_{modem_id}_roaming"
         )
-        self._attr_translation_placeholders = {"modem": modem_id}
+        if len(coordinator.data.modems) > 1:
+            self._attr_translation_key = "modem_roaming_multi"
+            self._attr_translation_placeholders = {"modem": modem_id}
 
     @property
     def is_on(self) -> bool | None:

@@ -75,3 +75,20 @@ class TestRutOSModemRoamingSensor:
         """Test unique_id follows {serial}_{modem}_roaming pattern."""
         sensor = RutOSModemRoamingSensor(mock_coordinator, "modem1")
         assert sensor.unique_id == "1234567890_modem1_roaming"
+
+    def test_single_modem_no_placeholder(
+        self, mock_coordinator: RutOSDataUpdateCoordinator
+    ):
+        """Single modem: base translation key, no placeholder (issue #26)."""
+        sensor = RutOSModemRoamingSensor(mock_coordinator, "modem1")
+        assert sensor.translation_key == "modem_roaming"
+        assert not sensor.translation_placeholders
+
+    def test_multi_modem_uses_multi_key(
+        self, mock_coordinator: RutOSDataUpdateCoordinator
+    ):
+        """Multi modem: _multi translation key with {modem} placeholder."""
+        mock_coordinator.data.modems = [{"id": "2-1"}, {"id": "3-1"}]
+        sensor = RutOSModemRoamingSensor(mock_coordinator, "2-1")
+        assert sensor.translation_key == "modem_roaming_multi"
+        assert sensor.translation_placeholders == {"modem": "2-1"}

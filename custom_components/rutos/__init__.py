@@ -2,12 +2,24 @@
 
 from __future__ import annotations
 
+import logging
+
 import voluptuous as vol
 
+from homeassistant.components.zone import DATA_ZONE_STORAGE_COLLECTION
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_USERNAME, Platform
+from homeassistant.const import (
+    CONF_HOST,
+    CONF_LATITUDE,
+    CONF_LONGITUDE,
+    CONF_NAME,
+    CONF_PASSWORD,
+    CONF_USERNAME,
+    Platform,
+)
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.util import slugify
 
 from .api import RutOSAPI
 from .const import (
@@ -17,6 +29,8 @@ from .const import (
     SERVICE_SET_FAILOVER_ORDER,
 )
 from .coordinator import RutOSDataUpdateCoordinator
+
+_LOGGER = logging.getLogger(__name__)
 
 PLATFORMS: list[Platform] = [
     Platform.SENSOR,
@@ -85,24 +99,72 @@ def _register_home_location_listener(
         if gps is None:
             return
 
-        lat = gps.get("latitude")
-        lon = gps.get("longitude")
-        if lat is None or lon is None:
+        # The router's ubus /gps/position/status endpoint returns numeric
+        # fields as strings (e.g. "44.817068", "156.4"), so coerce to float
+        # before handing them to homeassistant.set_location.
+        try:
+            lat = float(gps["latitude"])
+            lon = float(gps["longitude"])
+        except (KeyError, TypeError, ValueError):
             return
 
-        service_data: dict[str, float] = {
-            "latitude": lat,
-            "longitude": lon,
-        }
-        altitude = gps.get("altitude")
-        if altitude is not None:
-            service_data["elevation"] = altitude
+        altitude_raw = gps.get("altitude")
+        altitude: float | None
+        try:
+            altitude = float(altitude_raw) if altitude_raw is not None else None
+        except (TypeError, ValueError):
+            altitude = None
 
-        hass.async_create_task(
-            hass.services.async_call("homeassistant", "set_location", service_data)
-        )
+        hass.async_create_task(_async_apply_home_location(hass, lat, lon, altitude))
 
     entry.async_on_unload(coordinator.async_add_listener(_update_home_location))
+
+
+async def _async_apply_home_location(
+    hass: HomeAssistant,
+    lat: float,
+    lon: float,
+    altitude: float | None,
+) -> None:
+    """Push GPS coordinates to hass.config and, if needed, the stored zone.home."""
+    service_data: dict[str, float | int] = {"latitude": lat, "longitude": lon}
+    if altitude is not None:
+        # homeassistant.set_location's schema requires elevation to be an int.
+        service_data["elevation"] = int(round(altitude))
+
+    await hass.services.async_call("homeassistant", "set_location", service_data)
+
+    home_state = hass.states.get("zone.home")
+    if home_state is None or not home_state.attributes.get("editable"):
+        return
+
+    # A user-customized zone.home is stored in .storage/core.zones with
+    # editable=True. For stored zones HA skips wiring its
+    # core_config_updated listener, so the set_location call above updates
+    # hass.config but never moves the zone.home entity. Update the stored
+    # zone directly through the zone storage collection — this preserves the
+    # user's radius, icon, and passive settings while refreshing the
+    # coordinates.
+    await _async_update_stored_home_zone(hass, lat, lon)
+
+
+async def _async_update_stored_home_zone(
+    hass: HomeAssistant, lat: float, lon: float
+) -> None:
+    """Update the stored zone.home entry via the zone storage collection."""
+    try:
+        storage_collection = hass.data.get(DATA_ZONE_STORAGE_COLLECTION)
+        if storage_collection is None:
+            return
+        for item_id, item in storage_collection.data.items():
+            if slugify(item.get(CONF_NAME, "")) == "home":
+                await storage_collection.async_update_item(
+                    item_id,
+                    {CONF_LATITUDE: lat, CONF_LONGITUDE: lon},
+                )
+                return
+    except Exception as err:  # noqa: BLE001 - defensive against HA internal API churn
+        _LOGGER.warning("Could not update stored zone.home from GPS: %s", err)
 
 
 def _register_services(hass: HomeAssistant) -> None:

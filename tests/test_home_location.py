@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, call, patch
+from unittest.mock import AsyncMock, MagicMock, call, patch
 
+from homeassistant.components.zone import DATA_ZONE_STORAGE_COLLECTION
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 
@@ -84,6 +85,24 @@ def _mock_api(gps_position=None):
     return api
 
 
+def _install_home_zone_storage(hass: HomeAssistant, name: str = "Home") -> MagicMock:
+    """Install a mock zone storage collection that contains a home-zone entry."""
+    storage_collection = MagicMock()
+    storage_collection.data = {
+        "home": {
+            "name": name,
+            "latitude": 0.0,
+            "longitude": 0.0,
+            "radius": 150,
+            "passive": False,
+            "icon": "mdi:home",
+        }
+    }
+    storage_collection.async_update_item = AsyncMock()
+    hass.data[DATA_ZONE_STORAGE_COLLECTION] = storage_collection
+    return storage_collection
+
+
 def _set_location_calls(mock_call: AsyncMock) -> list:
     """Extract set_location calls from mock."""
     return [
@@ -122,7 +141,7 @@ async def test_gps_updates_home_location(hass: HomeAssistant):
             {
                 "latitude": 37.7749,
                 "longitude": -122.4194,
-                "elevation": 15.2,
+                "elevation": 15,
             },
         )
 
@@ -196,6 +215,200 @@ async def test_gps_missing_lat_lon_no_update(hass: HomeAssistant):
 
         location_calls = _set_location_calls(mock_call)
         assert len(location_calls) == 0
+
+
+async def test_editable_home_zone_updates_stored_zone(hass: HomeAssistant):
+    """A user-customized zone.home must be updated via the zone storage collection."""
+    entry = _create_entry(hass)
+    api = _mock_api(gps_position=MOCK_GPS_POSITION)
+    storage_collection = _install_home_zone_storage(hass)
+
+    with (
+        patch("custom_components.rutos.RutOSAPI", return_value=api),
+        patch(
+            "homeassistant.core.ServiceRegistry.async_call",
+            new_callable=AsyncMock,
+        ) as mock_call,
+    ):
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+        hass.states.async_set(
+            "zone.home",
+            "0",
+            {
+                "latitude": 40.7128,
+                "longitude": -74.0060,
+                "radius": 150,
+                "editable": True,
+                "friendly_name": "Home",
+            },
+        )
+
+        coordinator: RutOSDataUpdateCoordinator = entry.runtime_data
+        await coordinator.async_refresh()
+        await hass.async_block_till_done()
+
+        # hass.config is still updated via the set_location service call.
+        mock_call.assert_any_call(
+            "homeassistant",
+            "set_location",
+            {
+                "latitude": 37.7749,
+                "longitude": -122.4194,
+                "elevation": 15,
+            },
+        )
+
+        # And the stored zone was updated directly so the editable zone.home moves.
+        storage_collection.async_update_item.assert_awaited_once_with(
+            "home",
+            {"latitude": 37.7749, "longitude": -122.4194},
+        )
+
+
+async def test_non_editable_home_zone_skips_storage_update(hass: HomeAssistant):
+    """A non-editable zone.home must not touch the zone storage collection."""
+    entry = _create_entry(hass)
+    api = _mock_api(gps_position=MOCK_GPS_POSITION)
+    storage_collection = _install_home_zone_storage(hass)
+
+    with (
+        patch("custom_components.rutos.RutOSAPI", return_value=api),
+        patch(
+            "homeassistant.core.ServiceRegistry.async_call",
+            new_callable=AsyncMock,
+        ) as mock_call,
+    ):
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+        hass.states.async_set(
+            "zone.home",
+            "0",
+            {"latitude": 0.0, "longitude": 0.0, "editable": False},
+        )
+
+        coordinator: RutOSDataUpdateCoordinator = entry.runtime_data
+        await coordinator.async_refresh()
+        await hass.async_block_till_done()
+
+        mock_call.assert_any_call(
+            "homeassistant",
+            "set_location",
+            {
+                "latitude": 37.7749,
+                "longitude": -122.4194,
+                "elevation": 15,
+            },
+        )
+        storage_collection.async_update_item.assert_not_called()
+
+
+async def test_editable_home_zone_without_storage_collection(hass: HomeAssistant):
+    """If the zone storage collection is missing, set_location still fires."""
+    entry = _create_entry(hass)
+    api = _mock_api(gps_position=MOCK_GPS_POSITION)
+    hass.data.pop(DATA_ZONE_STORAGE_COLLECTION, None)
+
+    with (
+        patch("custom_components.rutos.RutOSAPI", return_value=api),
+        patch(
+            "homeassistant.core.ServiceRegistry.async_call",
+            new_callable=AsyncMock,
+        ) as mock_call,
+    ):
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+        hass.states.async_set(
+            "zone.home",
+            "0",
+            {"latitude": 0.0, "longitude": 0.0, "editable": True},
+        )
+
+        coordinator: RutOSDataUpdateCoordinator = entry.runtime_data
+        await coordinator.async_refresh()
+        await hass.async_block_till_done()
+
+        # hass.config is still updated even though storage collection is missing.
+        mock_call.assert_any_call(
+            "homeassistant",
+            "set_location",
+            {
+                "latitude": 37.7749,
+                "longitude": -122.4194,
+                "elevation": 15,
+            },
+        )
+
+
+async def test_float_altitude_rounded_to_int_elevation(hass: HomeAssistant):
+    """elevation must be int; set_location's schema rejects floats."""
+    gps_float_alt = {
+        "latitude": 37.7749,
+        "longitude": -122.4194,
+        "accuracy": 5,
+        "altitude": 156.7,
+    }
+    entry = _create_entry(hass)
+    api = _mock_api(gps_position=gps_float_alt)
+
+    with (
+        patch("custom_components.rutos.RutOSAPI", return_value=api),
+        patch(
+            "homeassistant.core.ServiceRegistry.async_call",
+            new_callable=AsyncMock,
+        ) as mock_call,
+    ):
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+        coordinator: RutOSDataUpdateCoordinator = entry.runtime_data
+        await coordinator.async_refresh()
+        await hass.async_block_till_done()
+
+        location_calls = _set_location_calls(mock_call)
+        assert location_calls, "set_location was not called"
+        service_data = location_calls[-1][0][2]
+        assert service_data["elevation"] == 157
+        assert isinstance(service_data["elevation"], int)
+
+
+async def test_string_valued_router_gps_is_coerced(hass: HomeAssistant):
+    """The RutOS ubus API returns GPS fields as strings; coerce before set_location."""
+    gps_strings = {
+        "latitude": "37.7749",
+        "longitude": "-122.4194",
+        "accuracy": "5",
+        "altitude": "156.4",
+    }
+    entry = _create_entry(hass)
+    api = _mock_api(gps_position=gps_strings)
+
+    with (
+        patch("custom_components.rutos.RutOSAPI", return_value=api),
+        patch(
+            "homeassistant.core.ServiceRegistry.async_call",
+            new_callable=AsyncMock,
+        ) as mock_call,
+    ):
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+        coordinator: RutOSDataUpdateCoordinator = entry.runtime_data
+        await coordinator.async_refresh()
+        await hass.async_block_till_done()
+
+        location_calls = _set_location_calls(mock_call)
+        assert location_calls, "set_location was not called"
+        service_data = location_calls[-1][0][2]
+        assert service_data["latitude"] == 37.7749
+        assert isinstance(service_data["latitude"], float)
+        assert service_data["longitude"] == -122.4194
+        assert isinstance(service_data["longitude"], float)
+        assert service_data["elevation"] == 156
+        assert isinstance(service_data["elevation"], int)
 
 
 async def test_altitude_none_omits_elevation(hass: HomeAssistant):

@@ -33,6 +33,30 @@ HACS.
   `translations/en.json`.
 - Sensor/binary_sensor/switch descriptions use `EntityDescription` dataclasses.
 
+## Testing — Never Open Real Sockets
+
+`pytest-homeassistant-custom-component` blocks all `socket.socket()` calls
+during tests and records any attempt on `HASocketBlockedError.instances`. The
+autouse `verify_cleanup` teardown asserts that list is empty, so **even a
+blocked attempt fails the test** — the assertion fires in teardown even when the
+test body passed.
+
+Rules when writing or modifying tests:
+
+- Any test that calls `hass.config_entries.async_setup(entry_id)` must patch
+  `custom_components.rutos.RutOSAPI` with a mock (or keep the API entirely out
+  of the call path). Don't rely on the real `aiohttp` session — it will try to
+  reach `192.168.1.1` and get blocked.
+- Keep the `patch(...)` context active for the **entire test**, not just the
+  initial setup. Creating a subentry, changing options, or anything that
+  triggers `async_schedule_reload`/`async_reload` will re-instantiate `RutOSAPI`
+  outside a short-lived patch block. Prefer a pytest fixture that `yield`s the
+  mock (see `patched_rutos_api` in `test_config_flow.py`) over a
+  `with patch(...)` inside a helper that returns before the test body runs.
+- When a CI failure mentions `HASocketBlockedError` / "the test opens sockets",
+  look for a reload path (subentries, options updates, coordinator retries) that
+  escapes the patch scope — not for a missing mock on the initial setup.
+
 ## Code Navigation — Prefer Serena MCP Tools
 
 When exploring or reading code in this project, **prefer Serena MCP tools** over

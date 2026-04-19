@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, patch
 
+import pytest
 
 from homeassistant import config_entries
 from homeassistant.core import HomeAssistant
@@ -287,17 +288,32 @@ async def test_options_flow_too_few_groups_error(
 # ---------------------------------------------------------------------------
 
 
-async def _setup_entry(hass, mock_config_entry, mock_api):
-    """Set up the config entry with the mocked API for subentry flow tests."""
-    mock_config_entry.add_to_hass(hass)
+@pytest.fixture
+def patched_rutos_api(mock_api):
+    """Patch RutOSAPI so entry setup (and reloads) use mock_api.
+
+    Must stay active for the entire test: creating a recipient subentry
+    triggers a reload of the parent entry, which re-instantiates RutOSAPI.
+    Without the patch held open, the reload uses the real class and attempts
+    network I/O, which pytest-homeassistant-custom-component blocks and
+    surfaces as a socket leak at teardown.
+    """
     with patch("custom_components.rutos.RutOSAPI", return_value=mock_api):
-        await hass.config_entries.async_setup(mock_config_entry.entry_id)
-        await hass.async_block_till_done()
+        yield mock_api
 
 
-async def test_recipient_subentry_creates(hass, mock_config_entry, mock_api):
+async def _setup_entry(hass, mock_config_entry):
+    """Set up the config entry. Requires ``patched_rutos_api`` fixture."""
+    mock_config_entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+
+
+async def test_recipient_subentry_creates(
+    hass, mock_config_entry, mock_api, patched_rutos_api
+):
     """Submitting valid input creates a recipient subentry on the parent entry."""
-    await _setup_entry(hass, mock_config_entry, mock_api)
+    await _setup_entry(hass, mock_config_entry)
 
     result = await hass.config_entries.subentries.async_init(
         (mock_config_entry.entry_id, SUBENTRY_TYPE_RECIPIENT),
@@ -328,9 +344,11 @@ async def test_recipient_subentry_creates(hass, mock_config_entry, mock_api):
     }
 
 
-async def test_recipient_subentry_invalid_phone(hass, mock_config_entry, mock_api):
+async def test_recipient_subentry_invalid_phone(
+    hass, mock_config_entry, mock_api, patched_rutos_api
+):
     """Bad phone format returns an inline error and no subentry is created."""
-    await _setup_entry(hass, mock_config_entry, mock_api)
+    await _setup_entry(hass, mock_config_entry)
 
     result = await hass.config_entries.subentries.async_init(
         (mock_config_entry.entry_id, SUBENTRY_TYPE_RECIPIENT),
@@ -347,11 +365,11 @@ async def test_recipient_subentry_invalid_phone(hass, mock_config_entry, mock_ap
 
 
 async def test_recipient_subentry_multimodem_requires_choice(
-    hass, mock_config_entry, mock_api
+    hass, mock_config_entry, mock_api, patched_rutos_api
 ):
     """When the router has >1 modem, modem must be picked."""
     mock_api.get_modems.return_value = [{"id": "modem1"}, {"id": "modem2"}]
-    await _setup_entry(hass, mock_config_entry, mock_api)
+    await _setup_entry(hass, mock_config_entry)
 
     result = await hass.config_entries.subentries.async_init(
         (mock_config_entry.entry_id, SUBENTRY_TYPE_RECIPIENT),
@@ -374,7 +392,9 @@ async def test_recipient_subentry_multimodem_requires_choice(
     assert list(mock_config_entry.subentries.values())[0].data[CONF_MODEM] == "modem2"
 
 
-async def test_recipient_subentry_reconfigure(hass, mock_config_entry, mock_api):
+async def test_recipient_subentry_reconfigure(
+    hass, mock_config_entry, mock_api, patched_rutos_api
+):
     """Reconfigure flow updates an existing recipient in place."""
     from homeassistant.config_entries import ConfigSubentryData
 
@@ -396,7 +416,7 @@ async def test_recipient_subentry_reconfigure(hass, mock_config_entry, mock_api)
             ),
         ],
     )
-    await _setup_entry(hass, mock_config_entry, mock_api)
+    await _setup_entry(hass, mock_config_entry)
     subentry_id = next(iter(mock_config_entry.subentries))
 
     result = await hass.config_entries.subentries.async_init(

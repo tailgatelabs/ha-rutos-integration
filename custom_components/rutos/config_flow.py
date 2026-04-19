@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 import voluptuous as vol
@@ -11,18 +12,23 @@ from homeassistant.config_entries import (
     ConfigEntry,
     ConfigFlow,
     ConfigFlowResult,
+    ConfigSubentryFlow,
     OptionsFlow,
+    SubentryFlowResult,
 )
-from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_USERNAME
+from homeassistant.const import CONF_HOST, CONF_NAME, CONF_PASSWORD, CONF_USERNAME
 from homeassistant.core import callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import RutOSAPI, RutOSAuthError, RutOSConnectionError
 from .const import (
     CONF_FAILOVER_GROUPS,
+    CONF_MODEM,
+    CONF_PHONE_NUMBER,
     CONF_UPDATE_HOME_LOCATION,
     DEFAULT_USERNAME,
     DOMAIN,
+    SUBENTRY_TYPE_RECIPIENT,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -37,6 +43,9 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
 
 MAX_FAILOVER_GROUPS = 5
 
+# Permissive E.164: leading +, then 6–15 digits.
+_PHONE_RE = re.compile(r"^\+\d{6,15}$")
+
 
 class RutOSConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle a config flow for RutOS."""
@@ -50,6 +59,14 @@ class RutOSConfigFlow(ConfigFlow, domain=DOMAIN):
     ) -> RutOSOptionsFlowHandler:
         """Get the options flow for this handler."""
         return RutOSOptionsFlowHandler()
+
+    @classmethod
+    @callback
+    def async_get_supported_subentry_types(
+        cls, config_entry: ConfigEntry
+    ) -> dict[str, type[ConfigSubentryFlow]]:
+        """Subentry types supported by this integration."""
+        return {SUBENTRY_TYPE_RECIPIENT: RecipientSubentryFlowHandler}
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -153,12 +170,8 @@ class RutOSOptionsFlowHandler(OptionsFlow):
         # Fetch current failover members, excluding disabled interfaces
         coordinator = self.config_entry.runtime_data
         members = await coordinator.api.get_failover_members()
-        active_ifaces = {
-            iface["name"] for iface in coordinator.data.wan_interfaces
-        }
-        members = [
-            m for m in members if m.get("interface", "") in active_ifaces
-        ]
+        active_ifaces = {iface["name"] for iface in coordinator.data.wan_interfaces}
+        members = [m for m in members if m.get("interface", "") in active_ifaces]
 
         # Build reverse map: iface_id → existing label
         existing_groups: dict[str, list[str]] = self.config_entry.options.get(
@@ -181,5 +194,104 @@ class RutOSOptionsFlowHandler(OptionsFlow):
         return self.async_show_form(
             step_id="failover_groups",
             data_schema=vol.Schema(schema),
+            errors=errors,
+        )
+
+
+class RecipientSubentryFlowHandler(ConfigSubentryFlow):
+    """Handle subentries that represent SMS recipients."""
+
+    async def async_step_user(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Add a new SMS recipient."""
+        return await self._async_handle_form(user_input)
+
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Edit an existing SMS recipient."""
+        subentry = self._get_reconfigure_subentry()
+        return await self._async_handle_form(user_input, defaults=dict(subentry.data))
+
+    async def _async_handle_form(
+        self,
+        user_input: dict[str, Any] | None,
+        defaults: dict[str, Any] | None = None,
+    ) -> SubentryFlowResult:
+        """Render and validate the recipient form for both create and edit."""
+        defaults = defaults or {}
+        reconfigure = self.source == "reconfigure"
+        step_id = "reconfigure" if reconfigure else "user"
+
+        parent_entry = self._get_entry()
+        coordinator = parent_entry.runtime_data
+        modem_ids = [
+            m["id"]
+            for m in getattr(coordinator.data, "modems", [])
+            if isinstance(m, dict) and m.get("id")
+        ]
+
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            name = str(user_input.get(CONF_NAME, "")).strip()
+            phone = str(user_input.get(CONF_PHONE_NUMBER, "")).strip()
+            modem = str(user_input.get(CONF_MODEM, "")).strip() or None
+
+            if not name:
+                errors[CONF_NAME] = "required"
+            if not _PHONE_RE.match(phone):
+                errors[CONF_PHONE_NUMBER] = "invalid_phone"
+            if modem and modem_ids and modem not in modem_ids:
+                errors[CONF_MODEM] = "unknown_modem"
+            if not modem and len(modem_ids) > 1:
+                errors[CONF_MODEM] = "modem_required"
+
+            if not errors:
+                data: dict[str, Any] = {
+                    CONF_NAME: name,
+                    CONF_PHONE_NUMBER: phone,
+                }
+                if modem:
+                    data[CONF_MODEM] = modem
+                if reconfigure:
+                    return self.async_update_and_abort(
+                        parent_entry,
+                        self._get_reconfigure_subentry(),
+                        title=name,
+                        data=data,
+                    )
+                return self.async_create_entry(title=name, data=data)
+
+        # Pre-fill defaults: prefer user_input on validation errors, then existing data.
+        prefill = {**defaults, **(user_input or {})}
+
+        schema_dict: dict[Any, Any] = {
+            vol.Required(CONF_NAME, default=prefill.get(CONF_NAME, "")): str,
+            vol.Required(
+                CONF_PHONE_NUMBER, default=prefill.get(CONF_PHONE_NUMBER, "")
+            ): str,
+        }
+        if len(modem_ids) > 1:
+            schema_dict[
+                vol.Required(
+                    CONF_MODEM,
+                    default=prefill.get(CONF_MODEM, modem_ids[0]),
+                )
+            ] = vol.In(modem_ids)
+        elif modem_ids:
+            # Single modem: optional override, defaulted but free-text so users
+            # can clear it if they later add a modem.
+            schema_dict[
+                vol.Optional(
+                    CONF_MODEM,
+                    default=prefill.get(CONF_MODEM, modem_ids[0]),
+                )
+            ] = str
+
+        return self.async_show_form(
+            step_id=step_id,
+            data_schema=vol.Schema(schema_dict),
             errors=errors,
         )

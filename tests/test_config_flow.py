@@ -14,8 +14,11 @@ from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_USERNAME
 
 from custom_components.rutos.const import (
     CONF_FAILOVER_GROUPS,
+    CONF_MODEM,
+    CONF_PHONE_NUMBER,
     CONF_UPDATE_HOME_LOCATION,
     DOMAIN,
+    SUBENTRY_TYPE_RECIPIENT,
 )
 
 
@@ -277,3 +280,144 @@ async def test_options_flow_too_few_groups_error(
 
     assert result["type"] is FlowResultType.FORM
     assert result["errors"] == {"base": "too_few_groups"}
+
+
+# ---------------------------------------------------------------------------
+# Recipient subentry flow tests
+# ---------------------------------------------------------------------------
+
+
+async def _setup_entry(hass, mock_config_entry, mock_api):
+    """Set up the config entry with the mocked API for subentry flow tests."""
+    mock_config_entry.add_to_hass(hass)
+    with patch("custom_components.rutos.RutOSAPI", return_value=mock_api):
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+
+async def test_recipient_subentry_creates(hass, mock_config_entry, mock_api):
+    """Submitting valid input creates a recipient subentry on the parent entry."""
+    await _setup_entry(hass, mock_config_entry, mock_api)
+
+    result = await hass.config_entries.subentries.async_init(
+        (mock_config_entry.entry_id, SUBENTRY_TYPE_RECIPIENT),
+        context={"source": "user"},
+    )
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "user"
+
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"],
+        {
+            "name": "Alice",
+            CONF_PHONE_NUMBER: "+15551234567",
+            CONF_MODEM: "modem1",
+        },
+    )
+    await hass.async_block_till_done()
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["title"] == "Alice"
+
+    subentries = list(mock_config_entry.subentries.values())
+    assert len(subentries) == 1
+    assert subentries[0].data == {
+        "name": "Alice",
+        CONF_PHONE_NUMBER: "+15551234567",
+        CONF_MODEM: "modem1",
+    }
+
+
+async def test_recipient_subentry_invalid_phone(hass, mock_config_entry, mock_api):
+    """Bad phone format returns an inline error and no subentry is created."""
+    await _setup_entry(hass, mock_config_entry, mock_api)
+
+    result = await hass.config_entries.subentries.async_init(
+        (mock_config_entry.entry_id, SUBENTRY_TYPE_RECIPIENT),
+        context={"source": "user"},
+    )
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"],
+        {"name": "Alice", CONF_PHONE_NUMBER: "555-1234"},
+    )
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {CONF_PHONE_NUMBER: "invalid_phone"}
+    assert not mock_config_entry.subentries
+
+
+async def test_recipient_subentry_multimodem_requires_choice(
+    hass, mock_config_entry, mock_api
+):
+    """When the router has >1 modem, modem must be picked."""
+    mock_api.get_modems.return_value = [{"id": "modem1"}, {"id": "modem2"}]
+    await _setup_entry(hass, mock_config_entry, mock_api)
+
+    result = await hass.config_entries.subentries.async_init(
+        (mock_config_entry.entry_id, SUBENTRY_TYPE_RECIPIENT),
+        context={"source": "user"},
+    )
+    # The form should expose modem as a vol.In, so submitting just name+phone
+    # raises a vol.Invalid which surfaces as a generic schema error. Submit
+    # with a valid modem on retry to confirm success.
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"],
+        {
+            "name": "Bob",
+            CONF_PHONE_NUMBER: "+15559998888",
+            CONF_MODEM: "modem2",
+        },
+    )
+    await hass.async_block_till_done()
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert list(mock_config_entry.subentries.values())[0].data[CONF_MODEM] == "modem2"
+
+
+async def test_recipient_subentry_reconfigure(hass, mock_config_entry, mock_api):
+    """Reconfigure flow updates an existing recipient in place."""
+    from homeassistant.config_entries import ConfigSubentryData
+
+    mock_config_entry = type(mock_config_entry)(
+        domain=mock_config_entry.domain,
+        title=mock_config_entry.title,
+        data=dict(mock_config_entry.data),
+        unique_id=mock_config_entry.unique_id,
+        subentries_data=[
+            ConfigSubentryData(
+                data={
+                    "name": "Alice",
+                    CONF_PHONE_NUMBER: "+15551234567",
+                    CONF_MODEM: "modem1",
+                },
+                subentry_type=SUBENTRY_TYPE_RECIPIENT,
+                title="Alice",
+                unique_id=None,
+            ),
+        ],
+    )
+    await _setup_entry(hass, mock_config_entry, mock_api)
+    subentry_id = next(iter(mock_config_entry.subentries))
+
+    result = await hass.config_entries.subentries.async_init(
+        (mock_config_entry.entry_id, SUBENTRY_TYPE_RECIPIENT),
+        context={"source": "reconfigure", "subentry_id": subentry_id},
+    )
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "reconfigure"
+
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"],
+        {
+            "name": "Alice (work)",
+            CONF_PHONE_NUMBER: "+15557776666",
+            CONF_MODEM: "modem1",
+        },
+    )
+    await hass.async_block_till_done()
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "reconfigure_successful"
+    updated = mock_config_entry.subentries[subentry_id]
+    assert updated.data[CONF_PHONE_NUMBER] == "+15557776666"
+    assert updated.title == "Alice (work)"

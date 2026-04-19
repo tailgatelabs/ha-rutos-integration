@@ -14,3 +14,7 @@ ATTR_INTERFACES = "interfaces"
 
 CONF_UPDATE_HOME_LOCATION = "update_home_location"
 CONF_FAILOVER_GROUPS = "failover_groups"
+
+SUBENTRY_TYPE_RECIPIENT = "recipient"
+CONF_PHONE_NUMBER = "phone_number"
+CONF_MODEM = "modem"

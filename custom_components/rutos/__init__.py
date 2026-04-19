@@ -38,6 +38,7 @@ PLATFORMS: list[Platform] = [
     Platform.SWITCH,
     Platform.BUTTON,
     Platform.SELECT,
+    Platform.NOTIFY,
 ]
 
 type RutOSConfigEntry = ConfigEntry[RutOSDataUpdateCoordinator]

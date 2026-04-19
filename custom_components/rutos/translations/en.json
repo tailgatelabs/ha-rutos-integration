@@ -20,6 +20,53 @@
       "already_configured": "This device is already configured."
     }
   },
+  "config_subentries": {
+    "recipient": {
+      "initiate_flow": {
+        "user": "Add SMS recipient",
+        "reconfigure": "Edit SMS recipient"
+      },
+      "entry_type": "SMS recipient",
+      "step": {
+        "user": {
+          "title": "Add SMS recipient",
+          "description": "A notify entity will be created for this recipient. Use it from automations via 'Notifications: Send a notification'.",
+          "data": {
+            "name": "Name",
+            "phone_number": "Phone number",
+            "modem": "Modem"
+          },
+          "data_description": {
+            "name": "Display name (used as part of the notify entity name).",
+            "phone_number": "Recipient in full E.164 format, e.g. +15551234567.",
+            "modem": "Which modem to send through. Required when the router has more than one modem."
+          }
+        },
+        "reconfigure": {
+          "title": "Edit SMS recipient",
+          "data": {
+            "name": "Name",
+            "phone_number": "Phone number",
+            "modem": "Modem"
+          },
+          "data_description": {
+            "name": "Display name (used as part of the notify entity name).",
+            "phone_number": "Recipient in full E.164 format, e.g. +15551234567.",
+            "modem": "Which modem to send through. Required when the router has more than one modem."
+          }
+        }
+      },
+      "error": {
+        "required": "This field is required.",
+        "invalid_phone": "Phone number must be in full E.164 format (e.g. +15551234567).",
+        "unknown_modem": "That modem id is not present on this router.",
+        "modem_required": "This router has multiple modems; please pick one."
+      },
+      "abort": {
+        "reconfigure_successful": "Recipient updated."
+      }
+    }
+  },
   "options": {
     "step": {
       "init": {

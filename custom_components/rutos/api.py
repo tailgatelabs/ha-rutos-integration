@@ -325,6 +325,13 @@ class RutOSAPI:
         """Switch to the next SIM card on a specific modem."""
         await self.post(f"/modems/{modem_id}/actions/switch_sim")
 
+    async def send_sms(self, number: str, message: str, modem: str) -> dict[str, Any]:
+        """Send an SMS message via the specified modem."""
+        return await self.post(
+            "/messages/actions/send",
+            {"data": {"number": number, "message": message, "modem": modem}},
+        )
+
     async def get_modems(self) -> list[dict[str, Any]]:
         """Fetch list of available modems."""
         try:

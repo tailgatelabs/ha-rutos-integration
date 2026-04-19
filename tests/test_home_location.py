@@ -375,6 +375,42 @@ async def test_float_altitude_rounded_to_int_elevation(hass: HomeAssistant):
         assert isinstance(service_data["elevation"], int)
 
 
+async def test_string_valued_router_gps_is_coerced(hass: HomeAssistant):
+    """The RutOS ubus API returns GPS fields as strings; coerce before set_location."""
+    gps_strings = {
+        "latitude": "37.7749",
+        "longitude": "-122.4194",
+        "accuracy": "5",
+        "altitude": "156.4",
+    }
+    entry = _create_entry(hass)
+    api = _mock_api(gps_position=gps_strings)
+
+    with (
+        patch("custom_components.rutos.RutOSAPI", return_value=api),
+        patch(
+            "homeassistant.core.ServiceRegistry.async_call",
+            new_callable=AsyncMock,
+        ) as mock_call,
+    ):
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+        coordinator: RutOSDataUpdateCoordinator = entry.runtime_data
+        await coordinator.async_refresh()
+        await hass.async_block_till_done()
+
+        location_calls = _set_location_calls(mock_call)
+        assert location_calls, "set_location was not called"
+        service_data = location_calls[-1][0][2]
+        assert service_data["latitude"] == 37.7749
+        assert isinstance(service_data["latitude"], float)
+        assert service_data["longitude"] == -122.4194
+        assert isinstance(service_data["longitude"], float)
+        assert service_data["elevation"] == 156
+        assert isinstance(service_data["elevation"], int)
+
+
 async def test_altitude_none_omits_elevation(hass: HomeAssistant):
     """Test elevation is omitted from service call when altitude is None."""
     gps_no_alt = {

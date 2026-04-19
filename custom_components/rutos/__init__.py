@@ -92,29 +92,29 @@ def _register_home_location_listener(
 
     def _update_home_location() -> None:
         """Update home location when coordinator data changes."""
-        _LOGGER.warning("rutos home-location listener fired")
         if not entry.options.get(CONF_UPDATE_HOME_LOCATION, True):
-            _LOGGER.warning("rutos home-location: option disabled")
             return
 
         gps = coordinator.data.gps_position
         if gps is None:
-            _LOGGER.warning("rutos home-location: gps is None")
             return
 
-        lat = gps.get("latitude")
-        lon = gps.get("longitude")
-        if lat is None or lon is None:
-            _LOGGER.warning("rutos home-location: lat/lon None lat=%s lon=%s", lat, lon)
+        # The router's ubus /gps/position/status endpoint returns numeric
+        # fields as strings (e.g. "44.817068", "156.4"), so coerce to float
+        # before handing them to homeassistant.set_location.
+        try:
+            lat = float(gps["latitude"])
+            lon = float(gps["longitude"])
+        except (KeyError, TypeError, ValueError):
             return
 
-        altitude = gps.get("altitude")
-        _LOGGER.warning(
-            "rutos home-location: calling set_location lat=%s lon=%s alt=%s",
-            lat,
-            lon,
-            altitude,
-        )
+        altitude_raw = gps.get("altitude")
+        altitude: float | None
+        try:
+            altitude = float(altitude_raw) if altitude_raw is not None else None
+        except (TypeError, ValueError):
+            altitude = None
+
         hass.async_create_task(_async_apply_home_location(hass, lat, lon, altitude))
 
     entry.async_on_unload(coordinator.async_add_listener(_update_home_location))
@@ -127,44 +127,15 @@ async def _async_apply_home_location(
     altitude: float | None,
 ) -> None:
     """Push GPS coordinates to hass.config and, if needed, the stored zone.home."""
-    _LOGGER.warning(
-        "rutos apply_home: entered lat=%s(%s) lon=%s(%s) alt=%s(%s)",
-        lat,
-        type(lat).__name__,
-        lon,
-        type(lon).__name__,
-        altitude,
-        type(altitude).__name__ if altitude is not None else "None",
-    )
     service_data: dict[str, float | int] = {"latitude": lat, "longitude": lon}
     if altitude is not None:
-        try:
-            service_data["elevation"] = int(round(altitude))
-        except (TypeError, ValueError) as err:
-            _LOGGER.warning(
-                "rutos apply_home: altitude cast failed alt=%r err=%s", altitude, err
-            )
+        # homeassistant.set_location's schema requires elevation to be an int.
+        service_data["elevation"] = int(round(altitude))
 
-    _LOGGER.warning("rutos apply_home: service_data=%r", service_data)
-
-    try:
-        await hass.services.async_call("homeassistant", "set_location", service_data)
-    except Exception as err:  # noqa: BLE001
-        _LOGGER.warning(
-            "rutos apply_home: set_location raised %s: %s",
-            type(err).__name__,
-            err,
-        )
-        return
-
-    _LOGGER.warning("rutos apply_home: set_location returned OK")
+    await hass.services.async_call("homeassistant", "set_location", service_data)
 
     home_state = hass.states.get("zone.home")
     if home_state is None or not home_state.attributes.get("editable"):
-        _LOGGER.warning(
-            "rutos apply_home: skip storage update editable=%s",
-            home_state.attributes.get("editable") if home_state else "no-state",
-        )
         return
 
     # A user-customized zone.home is stored in .storage/core.zones with

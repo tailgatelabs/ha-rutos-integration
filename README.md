@@ -4,8 +4,8 @@
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
 
 A Home Assistant custom integration for Teltonika devices running RutOS.
-Provides WAN interface management, internet connectivity monitoring, and
-failover control.
+Provides WAN interface management, internet connectivity monitoring, failover
+control, GPS tracking, cellular monitoring, and SMS notifications.
 
 ## Supported Devices
 
@@ -14,26 +14,33 @@ failover control.
 
 ## Features
 
-- **WAN Interface Sensors** — Status, IP address, protocol, and uptime for each
-  WAN interface
-- **Active WAN Sensor** — Shows which WAN interface is currently active
-- **Internet Connectivity** — Binary sensor reflecting the router's own
-  connectivity check
-- **WAN Interface Switches** — Enable/disable individual WAN interfaces
-- **Failover Ordering** — Service call to reorder WAN interface failover
-  priority
-- **GPS Tracking** — Sensors for speed, altitude, heading, satellites, accuracy,
-  and fix status, with optional automatic updates to the Home Assistant home
-  location
-- **Data Usage** — Data used, data limit, and usage percentage for each
+### Major features
+
+- **WAN failover control** — Per-interface status, IP address, protocol, and
+  uptime sensors; switches to enable or disable each interface; and a
+  `Failover priority` select (plus a `rutos.set_failover_order` service) to
+  switch between priority orderings with a single tap
+- **Internet connectivity monitoring** — Binary sensor reflecting the router's
+  own connectivity check, ideal for triggering failover automations and alerts
+- **GPS tracking** — Latitude, longitude, speed, altitude, heading, satellites,
+  accuracy, and fix status sensors, with optional automatic updates to the Home
+  Assistant home location for mobile installations (RVs, boats, etc.)
+- **Cellular monitoring** — RSSI, RSRP, RSRQ, SINR, network type, band,
+  operator, and roaming status for each modem
+- **Data usage tracking** — Data used, data limit, and usage percentage for each
   configured data limit, plus a button to reset usage counters
-- **Cellular Signal** — RSSI, RSRP, RSRQ, SINR, network type, and band for each
-  modem
-- **Mobile Operator** — Current carrier name for each modem (e.g., "Bell",
-  "T-Mobile")
-- **Modem Roaming** — Binary sensor indicating whether each modem is roaming
-- **Modem Reboot** — Button to reboot individual modems without rebooting the
+- **SMS notifications** — Configure recipients as subentries to create one
+  `notify.*` entity per recipient; send SMS from automations through any modem
+  on the router
+
+### Other features
+
+- **Active WAN interface sensor** — Shows which WAN interface currently carries
+  traffic
+- **Modem reboot button** — Reboot individual modems without rebooting the
   entire device
+- **Dual-SIM support** — `Active SIM` sensor and `Switch SIM` button for modems
+  with two SIM slots
 
 ## Installation
 
@@ -41,8 +48,7 @@ failover control.
 
 1. Open HACS in Home Assistant
 2. Go to **Integrations** > **Custom repositories**
-3. Add `https://github.com/crbn60/ha-rutos-integration` as an
-   **Integration**
+3. Add `https://github.com/crbn60/ha-rutos-integration` as an **Integration**
 4. Search for "RutOS" and install it
 5. Restart Home Assistant
 
@@ -80,6 +86,24 @@ switch between WAN failover orderings with a single tap. To set it up:
    "Cellular, Starlink, WiFi" vs "Starlink, Cellular, WiFi").
 
 To change labels later, repeat the same Configure flow.
+
+### SMS Recipients
+
+Add one recipient per person or phone number you want to text from automations.
+Each recipient becomes its own `notify.*` entity.
+
+1. Go to **Settings** > **Devices & services** > **RutOS**
+2. Click **Add SMS recipient** under the integration
+3. Enter:
+   - **Name** — Display name used as part of the notify entity name
+   - **Phone number** — Full E.164 format (e.g., `+15551234567`)
+   - **Modem** — Which modem to send through (required when the router has more
+     than one modem)
+4. Use the resulting `notify.sms_*` entity from any automation via
+   **Notifications: Send a notification**
+
+To edit or remove a recipient, use the **Configure** / **Delete** controls on
+the subentry.
 
 ## Services
 
@@ -166,6 +190,7 @@ location from GPS**.
 | `{modem} network type`   | Network technology (LTE, 5G, etc.)          | —    |
 | `{modem} band`           | Operating frequency band                    | —    |
 | `{modem} operator`       | Mobile network operator name                | —    |
+| `{modem} active SIM`     | Currently active SIM slot (dual-SIM modems) | —    |
 | `{limit} data used`      | Total data consumed                         | B    |
 | `{limit} data limit`     | Configured data cap                         | B    |
 | `{limit} data usage`     | Usage as percentage of limit                | %    |
@@ -191,10 +216,17 @@ location from GPS**.
 
 ### Buttons
 
-| Entity             | Description                |
-| ------------------ | -------------------------- |
-| `Clear data usage` | Reset data usage counters  |
-| `Reboot {modem}`   | Reboot an individual modem |
+| Entity               | Description                               |
+| -------------------- | ----------------------------------------- |
+| `Clear data usage`   | Reset data usage counters                 |
+| `Reboot {modem}`     | Reboot an individual modem                |
+| `Switch SIM {modem}` | Toggle the active SIM on a dual-SIM modem |
+
+### Notify
+
+| Entity            | Description                                        |
+| ----------------- | -------------------------------------------------- |
+| `SMS {recipient}` | Sends an SMS to a configured recipient via a modem |
 
 ## Automation Examples
 

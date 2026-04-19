@@ -117,9 +117,10 @@ async def _async_apply_home_location(
     altitude: float | None,
 ) -> None:
     """Push GPS coordinates to hass.config and, if needed, the stored zone.home."""
-    service_data: dict[str, float] = {"latitude": lat, "longitude": lon}
+    service_data: dict[str, float | int] = {"latitude": lat, "longitude": lon}
     if altitude is not None:
-        service_data["elevation"] = altitude
+        # homeassistant.set_location's schema requires elevation to be an int.
+        service_data["elevation"] = int(round(altitude))
 
     # Always update hass.config.latitude/longitude/elevation — other
     # integrations read these, and for a non-editable zone.home this also

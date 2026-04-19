@@ -92,19 +92,29 @@ def _register_home_location_listener(
 
     def _update_home_location() -> None:
         """Update home location when coordinator data changes."""
+        _LOGGER.warning("rutos home-location listener fired")
         if not entry.options.get(CONF_UPDATE_HOME_LOCATION, True):
+            _LOGGER.warning("rutos home-location: option disabled")
             return
 
         gps = coordinator.data.gps_position
         if gps is None:
+            _LOGGER.warning("rutos home-location: gps is None")
             return
 
         lat = gps.get("latitude")
         lon = gps.get("longitude")
         if lat is None or lon is None:
+            _LOGGER.warning("rutos home-location: lat/lon None lat=%s lon=%s", lat, lon)
             return
 
         altitude = gps.get("altitude")
+        _LOGGER.warning(
+            "rutos home-location: calling set_location lat=%s lon=%s alt=%s",
+            lat,
+            lon,
+            altitude,
+        )
         hass.async_create_task(_async_apply_home_location(hass, lat, lon, altitude))
 
     entry.async_on_unload(coordinator.async_add_listener(_update_home_location))

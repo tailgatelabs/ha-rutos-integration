@@ -127,18 +127,44 @@ async def _async_apply_home_location(
     altitude: float | None,
 ) -> None:
     """Push GPS coordinates to hass.config and, if needed, the stored zone.home."""
+    _LOGGER.warning(
+        "rutos apply_home: entered lat=%s(%s) lon=%s(%s) alt=%s(%s)",
+        lat,
+        type(lat).__name__,
+        lon,
+        type(lon).__name__,
+        altitude,
+        type(altitude).__name__ if altitude is not None else "None",
+    )
     service_data: dict[str, float | int] = {"latitude": lat, "longitude": lon}
     if altitude is not None:
-        # homeassistant.set_location's schema requires elevation to be an int.
-        service_data["elevation"] = int(round(altitude))
+        try:
+            service_data["elevation"] = int(round(altitude))
+        except (TypeError, ValueError) as err:
+            _LOGGER.warning(
+                "rutos apply_home: altitude cast failed alt=%r err=%s", altitude, err
+            )
 
-    # Always update hass.config.latitude/longitude/elevation — other
-    # integrations read these, and for a non-editable zone.home this also
-    # propagates to the entity via the zone component's listener.
-    await hass.services.async_call("homeassistant", "set_location", service_data)
+    _LOGGER.warning("rutos apply_home: service_data=%r", service_data)
+
+    try:
+        await hass.services.async_call("homeassistant", "set_location", service_data)
+    except Exception as err:  # noqa: BLE001
+        _LOGGER.warning(
+            "rutos apply_home: set_location raised %s: %s",
+            type(err).__name__,
+            err,
+        )
+        return
+
+    _LOGGER.warning("rutos apply_home: set_location returned OK")
 
     home_state = hass.states.get("zone.home")
     if home_state is None or not home_state.attributes.get("editable"):
+        _LOGGER.warning(
+            "rutos apply_home: skip storage update editable=%s",
+            home_state.attributes.get("editable") if home_state else "no-state",
+        )
         return
 
     # A user-customized zone.home is stored in .storage/core.zones with

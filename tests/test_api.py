@@ -1164,6 +1164,87 @@ class TestGetModemSignal:
             result = await api_client.get_modem_signal()
             assert result == []
 
+    async def test_get_modem_signal_carrier_aggregation(self, api_client):
+        """5G-NSA with aggregated LTE + NR carriers: primary PCell overrides top-level band."""
+        status_data = [
+            {
+                "id": "2-1",
+                "rssi": -62,
+                "band": "5G N78",
+                "conntype": "5G (NSA)",
+                "ca_signal": [
+                    {
+                        "band": "LTE B7",
+                        "primary": True,
+                        "bandwidth": "20",
+                        "rsrp": -97,
+                        "rsrq": -12,
+                        "sinr": 11,
+                        "pcid": 82,
+                        "frequency": 2850,
+                    },
+                    {
+                        "band": "5G N78",
+                        "primary": False,
+                        "bandwidth": "50",
+                        "rsrp": -113,
+                        "rsrq": -19,
+                        "sinr": -7,
+                        "pcid": 129,
+                        "frequency": 640608,
+                    },
+                ],
+            }
+        ]
+        with aioresponses() as m:
+            m.post(_url("/login"), payload=_login_success())
+            m.get(_url("/modems/status"), payload=_success(status_data))
+
+            result = await api_client.get_modem_signal()
+
+            assert len(result) == 1
+            # Primary carrier (LTE B7) overrides the misleading top-level "5G N78".
+            assert result[0]["band"] == "LTE B7"
+            assert result[0]["channel_number"] == 2850
+            assert len(result[0]["carriers"]) == 2
+            assert result[0]["carriers"][0]["band"] == "LTE B7"
+            assert result[0]["carriers"][0]["primary"] is True
+            assert result[0]["carriers"][1]["band"] == "5G N78"
+            assert result[0]["carriers"][1]["primary"] is False
+
+    async def test_get_modem_signal_carriers_empty_without_ca_signal(self, api_client):
+        """Modems with no ca_signal still get carriers=[] for attribute parity."""
+        status_data = [{"id": "2-1", "band": "LTE B12"}]
+        with aioresponses() as m:
+            m.post(_url("/login"), payload=_login_success())
+            m.get(_url("/modems/status"), payload=_success(status_data))
+
+            result = await api_client.get_modem_signal()
+            assert result[0]["carriers"] == []
+            assert result[0]["band"] == "LTE B12"
+
+    async def test_get_modem_signal_fallback_emits_empty_carriers(self, api_client):
+        """Fallback /modems/signal/status path has no ca_signal — carriers must be []."""
+        signal_data = [
+            {
+                "modem": "2-1",
+                "signal": [
+                    {
+                        "rssi": -72,
+                        "band": "LTE B12",
+                        "channel_number": 5060,
+                    }
+                ],
+            }
+        ]
+        with aioresponses() as m:
+            m.post(_url("/login"), payload=_login_success())
+            m.get(_url("/modems/status"), payload=_error("unavailable"))
+            m.get(_url("/modems/signal/status"), payload=_success(signal_data))
+
+            result = await api_client.get_modem_signal()
+            assert result[0]["carriers"] == []
+
 
 class TestGetModemStatus:
     """Tests for get_modem_status."""

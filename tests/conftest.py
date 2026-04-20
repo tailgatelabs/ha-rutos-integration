@@ -135,6 +135,81 @@ def mock_modem_signal() -> list[dict]:
             "network_type": "LTE",
             "band": "B7",
             "channel_number": 3100,
+            "carriers": [],
+        },
+    ]
+
+
+@pytest.fixture
+def mock_modem_signal_nsa_ca() -> list[dict]:
+    """Return mock modem signal data for a 5G-NSA 3CA LTE + 2x N78 NR configuration.
+
+    Shape mirrors the normalized output of ``RutOSAPI.get_modem_signal`` when the
+    router reports ``ca_signal`` entries. The top-level ``band`` is sourced from
+    the primary carrier (LTE B7), not the top-level NR anchor.
+    """
+    return [
+        {
+            "id": "modem1",
+            "rssi": -62,
+            "rsrp": -97,
+            "rsrq": -12,
+            "sinr": 11,
+            "network_type": "5G (NSA)",
+            "band": "LTE B7",
+            "channel_number": 2850,
+            "carriers": [
+                {
+                    "band": "LTE B7",
+                    "primary": True,
+                    "bandwidth": "20",
+                    "rsrp": -97,
+                    "rsrq": -12,
+                    "sinr": 11,
+                    "pcid": 82,
+                    "frequency": 2850,
+                },
+                {
+                    "band": "LTE B2",
+                    "primary": False,
+                    "bandwidth": "20",
+                    "rsrp": -93,
+                    "rsrq": -14,
+                    "sinr": 4,
+                    "pcid": 82,
+                    "frequency": 900,
+                },
+                {
+                    "band": "LTE B66",
+                    "primary": False,
+                    "bandwidth": "15",
+                    "rsrp": -103,
+                    "rsrq": -19,
+                    "sinr": -2,
+                    "pcid": 82,
+                    "frequency": 66811,
+                },
+                {
+                    "band": "5G N78",
+                    "primary": False,
+                    "bandwidth": "50",
+                    "rsrp": -113,
+                    "rsrq": -19,
+                    "sinr": -7,
+                    "pcid": 129,
+                    "frequency": 640608,
+                },
+                {
+                    "band": "5G N78",
+                    "primary": False,
+                    "bandwidth": "30",
+                    "rsrp": -113,
+                    "rsrq": -19,
+                    "sinr": -7,
+                    "pcid": 129,
+                    "frequency": 633984,
+                },
+            ],
         },
     ]
 

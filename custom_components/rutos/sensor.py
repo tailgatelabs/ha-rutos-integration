@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
@@ -26,6 +27,67 @@ class RutOSSensorEntityDescription(SensorEntityDescription):
     """Describe a RutOS sensor entity."""
 
     value_fn: Callable[[dict[str, Any]], str | int | float | None]
+    attributes_fn: Callable[[dict[str, Any]], dict[str, Any]] | None = None
+
+
+_BAND_RE = re.compile(r"(?P<rat>LTE|5G)\s*[BN]?(?P<num>\d+)", re.IGNORECASE)
+
+
+def _bands_attributes(modem: dict[str, Any]) -> dict[str, Any]:
+    """Expose the raw carrier list and primary band on the bands sensor.
+
+    ``band`` on the modem dict is already sourced from the primary carrier by
+    ``RutOSAPI.get_modem_signal`` when ``ca_signal`` is present, so reuse it
+    instead of re-searching the carriers list.
+    """
+    carriers = modem.get("carriers") or []
+    return {
+        "carriers": carriers,
+        "primary_band": modem.get("band") if carriers else None,
+    }
+
+
+def _format_bands(carriers: list[dict[str, Any]], fallback: str | None) -> str | None:
+    """Render a carrier-aggregation list into a compact display string.
+
+    Example output: ``"LTE 7 (P), 2, 66 + 5G 78×2"``. Intra-band duplicates
+    (same RAT + band number, e.g. two N78 NR carriers) are collapsed with an
+    ``×N`` suffix. When no carriers are parseable, falls back to the primary
+    band string so the sensor still has a value on non-CA modems.
+    """
+    if not carriers:
+        return fallback
+    groups: dict[str, list[list[Any]]] = {"LTE": [], "5G": []}
+    seen: dict[tuple[str, str], int] = {}
+    for c in carriers:
+        m = _BAND_RE.search(str(c.get("band") or ""))
+        if not m:
+            continue
+        rat = m.group("rat").upper()
+        num = m.group("num")
+        key = (rat, num)
+        if key in seen:
+            entry = groups[rat][seen[key]]
+            entry[1] = entry[1] or bool(c.get("primary"))
+            entry[2] += 1
+        else:
+            seen[key] = len(groups[rat])
+            groups[rat].append([num, bool(c.get("primary")), 1])
+    parts: list[str] = []
+    for rat in ("LTE", "5G"):
+        bands = groups[rat]
+        if not bands:
+            continue
+        rendered: list[str] = []
+        for num, primary, count in bands:
+            s = str(num)
+            if primary:
+                s += " (P)"
+            if count > 1:
+                s += f"×{count}"
+            rendered.append(s)
+        parts.append(f"{rat} {', '.join(rendered)}")
+    return " + ".join(parts) if parts else fallback
 
 
 INTERFACE_SENSORS: tuple[RutOSSensorEntityDescription, ...] = (
@@ -184,6 +246,12 @@ MODEM_SIGNAL_SENSORS: tuple[RutOSSensorEntityDescription, ...] = (
         key="band",
         translation_key="modem_band",
         value_fn=lambda m: m.get("band"),
+    ),
+    RutOSSensorEntityDescription(
+        key="bands",
+        translation_key="modem_bands",
+        value_fn=lambda m: _format_bands(m.get("carriers") or [], m.get("band")),
+        attributes_fn=_bands_attributes,
     ),
 )
 
@@ -373,6 +441,16 @@ class RutOSModemSignalSensor(RutOSEntity, SensorEntity):
         if modem is None:
             return None
         return self.entity_description.value_fn(modem)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Return structured extras for sensors that opt into attributes."""
+        if self.entity_description.attributes_fn is None:
+            return None
+        modem = self._find_modem()
+        if modem is None:
+            return None
+        return self.entity_description.attributes_fn(modem)
 
 
 class RutOSModemStatusSensor(RutOSEntity, SensorEntity):

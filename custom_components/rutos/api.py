@@ -34,6 +34,34 @@ def _extract_ip(iface: dict[str, Any]) -> str | None:
     return None
 
 
+def _normalize_carriers(ca_signal: Any) -> list[dict[str, Any]]:
+    """Normalize the /modems/status ``ca_signal`` array into a carriers list.
+
+    The Vuci API returns one entry per aggregated carrier (LTE CA and/or 5G
+    NSA/NR-CA). Each entry carries its own band/bandwidth/RSRP/RSRQ/SINR and a
+    ``primary`` flag identifying the PCell.
+    """
+    out: list[dict[str, Any]] = []
+    if not isinstance(ca_signal, list):
+        return out
+    for c in ca_signal:
+        if not isinstance(c, dict):
+            continue
+        out.append(
+            {
+                "band": c.get("band"),
+                "primary": bool(c.get("primary")),
+                "bandwidth": c.get("bandwidth"),
+                "rsrp": c.get("rsrp"),
+                "rsrq": c.get("rsrq"),
+                "sinr": c.get("sinr"),
+                "pcid": c.get("pcid"),
+                "frequency": c.get("frequency"),
+            }
+        )
+    return out
+
+
 class RutOSAPIError(Exception):
     """Base exception for RutOS API errors."""
 
@@ -372,10 +400,14 @@ class RutOSAPI:
             for modem in status:
                 if not isinstance(modem, dict):
                     continue
-                channel = None
-                ca_signal = modem.get("ca_signal") or []
-                if ca_signal and isinstance(ca_signal[0], dict):
-                    channel = ca_signal[0].get("frequency")
+                carriers = _normalize_carriers(modem.get("ca_signal"))
+                primary = next((c for c in carriers if c["primary"]), None)
+                if primary is not None:
+                    band = primary["band"]
+                    channel = primary["frequency"]
+                else:
+                    band = modem.get("band")
+                    channel = carriers[0]["frequency"] if carriers else None
                 modems.append(
                     {
                         "id": modem.get("id") or modem.get("modem") or "",
@@ -384,8 +416,9 @@ class RutOSAPI:
                         "rsrq": modem.get("rsrq"),
                         "sinr": modem.get("sinr"),
                         "network_type": modem.get("conntype") or modem.get("ntype"),
-                        "band": modem.get("band"),
+                        "band": band,
                         "channel_number": channel,
+                        "carriers": carriers,
                     }
                 )
             return modems
@@ -417,6 +450,7 @@ class RutOSAPI:
                     "network_type": src.get("network_type"),
                     "band": src.get("band"),
                     "channel_number": src.get("channel_number"),
+                    "carriers": [],
                 }
             )
         return modems

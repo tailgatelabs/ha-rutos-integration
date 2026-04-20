@@ -171,6 +171,12 @@
       "modem_band_multi": {
         "name": "{modem} band"
       },
+      "modem_bands": {
+        "name": "Bands"
+      },
+      "modem_bands_multi": {
+        "name": "{modem} bands"
+      },
       "modem_operator": {
         "name": "Operator"
       },

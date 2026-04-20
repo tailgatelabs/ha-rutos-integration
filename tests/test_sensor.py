@@ -17,7 +17,18 @@ from custom_components.rutos.sensor import (
     RutOSModemSignalSensor,
     RutOSModemStatusSensor,
     RutOSSensorEntity,
+    _format_bands,
 )
+
+
+def _bands_desc():
+    """Locate the bands entity description by key."""
+    return next(d for d in MODEM_SIGNAL_SENSORS if d.key == "bands")
+
+
+def _band_desc():
+    """Locate the legacy single-band entity description by key."""
+    return next(d for d in MODEM_SIGNAL_SENSORS if d.key == "band")
 
 
 class TestRutOSSensorEntity:
@@ -375,3 +386,85 @@ class TestModemSensorNaming:
         sensor = RutOSModemStatusSensor(mock_coordinator, desc, "2-1")
         assert sensor.translation_key == "modem_operator_multi"
         assert sensor.translation_placeholders == {"modem": "2-1"}
+
+
+class TestFormatBands:
+    """Pure unit tests for the band-list formatter."""
+
+    def test_empty_carriers_returns_fallback(self):
+        assert _format_bands([], "B7") == "B7"
+        assert _format_bands([], None) is None
+
+    def test_single_lte_carrier(self):
+        carriers = [{"band": "LTE B7", "primary": True}]
+        assert _format_bands(carriers, None) == "LTE 7 (P)"
+
+    def test_nsa_3ca_lte_plus_2x_n78(self):
+        """5G-NSA with 3CA LTE (PCell B7) + intra-band 2x N78 NR."""
+        carriers = [
+            {"band": "LTE B7", "primary": True},
+            {"band": "LTE B2", "primary": False},
+            {"band": "LTE B66", "primary": False},
+            {"band": "5G N78", "primary": False},
+            {"band": "5G N78", "primary": False},
+        ]
+        assert _format_bands(carriers, None) == "LTE 7 (P), 2, 66 + 5G 78×2"
+
+    def test_unparseable_band_is_skipped(self):
+        carriers = [
+            {"band": "LTE B7", "primary": True},
+            {"band": "garbage", "primary": False},
+            {"band": None, "primary": False},
+        ]
+        assert _format_bands(carriers, None) == "LTE 7 (P)"
+
+    def test_all_unparseable_falls_back(self):
+        carriers = [{"band": "garbage"}]
+        assert _format_bands(carriers, "B7") == "B7"
+
+
+class TestRutOSBandsSensor:
+    """Tests for the carrier-aggregation bands sensor."""
+
+    def test_native_value_with_carriers(
+        self,
+        mock_coordinator: RutOSDataUpdateCoordinator,
+        mock_modem_signal_nsa_ca,
+    ):
+        mock_coordinator.data.modem_signal = mock_modem_signal_nsa_ca
+        sensor = RutOSModemSignalSensor(mock_coordinator, _bands_desc(), "modem1")
+        assert sensor.native_value == "LTE 7 (P), 2, 66 + 5G 78×2"
+
+    def test_native_value_without_carriers_falls_back(
+        self, mock_coordinator: RutOSDataUpdateCoordinator
+    ):
+        """Non-CA modem: sensor falls back to the top-level band string."""
+        sensor = RutOSModemSignalSensor(mock_coordinator, _bands_desc(), "modem1")
+        assert sensor.native_value == "B7"
+
+    def test_extra_state_attributes(
+        self,
+        mock_coordinator: RutOSDataUpdateCoordinator,
+        mock_modem_signal_nsa_ca,
+    ):
+        mock_coordinator.data.modem_signal = mock_modem_signal_nsa_ca
+        sensor = RutOSModemSignalSensor(mock_coordinator, _bands_desc(), "modem1")
+        attrs = sensor.extra_state_attributes
+        assert attrs is not None
+        assert attrs["primary_band"] == "LTE B7"
+        assert len(attrs["carriers"]) == 5
+        assert attrs["carriers"][0]["band"] == "LTE B7"
+
+    def test_legacy_band_sensor_has_no_attributes(
+        self, mock_coordinator: RutOSDataUpdateCoordinator
+    ):
+        """Sensors without attributes_fn should not expose extras."""
+        sensor = RutOSModemSignalSensor(mock_coordinator, _band_desc(), "modem1")
+        assert sensor.extra_state_attributes is None
+
+    def test_missing_modem_returns_none(
+        self, mock_coordinator: RutOSDataUpdateCoordinator
+    ):
+        sensor = RutOSModemSignalSensor(mock_coordinator, _bands_desc(), "nope")
+        assert sensor.native_value is None
+        assert sensor.extra_state_attributes is None

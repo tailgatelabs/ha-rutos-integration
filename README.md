@@ -1,6 +1,6 @@
 # RutOS Home Assistant Integration
 
-[![Validate](https://github.com/crbn60/ha-rutos-integration/actions/workflows/validate.yml/badge.svg)](https://github.com/crbn60/ha-rutos-integration/actions/workflows/validate.yml)
+[![Validate](https://github.com/tailgatelabs/ha-rutos-integration/actions/workflows/validate.yml/badge.svg)](https://github.com/tailgatelabs/ha-rutos-integration/actions/workflows/validate.yml)
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
 
 A Home Assistant custom integration for Teltonika devices running RutOS.
@@ -48,7 +48,8 @@ control, GPS tracking, cellular monitoring, and SMS notifications.
 
 1. Open HACS in Home Assistant
 2. Go to **Integrations** > **Custom repositories**
-3. Add `https://github.com/crbn60/ha-rutos-integration` as an **Integration**
+3. Add `https://github.com/tailgatelabs/ha-rutos-integration` as an
+   **Integration**
 4. Search for "RutOS" and install it
 5. Restart Home Assistant
 

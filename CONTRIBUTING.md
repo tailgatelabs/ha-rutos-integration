@@ -97,7 +97,7 @@ from the latest release on `main` by default. To test a different branch:
 
    ```bash
    rm -rf /config/custom_components/rutos
-   git clone https://github.com/crbn60/ha-rutos-integration.git /tmp/rutos-repo
+   git clone https://github.com/tailgatelabs/ha-rutos-integration.git /tmp/rutos-repo
    cp -r /tmp/rutos-repo/custom_components/rutos /config/custom_components/rutos
    rm -rf /tmp/rutos-repo
    ```
@@ -106,7 +106,7 @@ from the latest release on `main` by default. To test a different branch:
 
    ```bash
    cd /tmp  # use a temp clone to grab the branch
-   git clone -b my-feature https://github.com/crbn60/ha-rutos-integration.git rutos-repo
+   git clone -b my-feature https://github.com/tailgatelabs/ha-rutos-integration.git rutos-repo
    rm -rf /config/custom_components/rutos
    cp -r rutos-repo/custom_components/rutos /config/custom_components/rutos
    rm -rf rutos-repo
@@ -119,7 +119,7 @@ from the latest release on `main` by default. To test a different branch:
 1. Clone the repo on your development machine:
 
    ```bash
-   git clone https://github.com/crbn60/ha-rutos-integration.git
+   git clone https://github.com/tailgatelabs/ha-rutos-integration.git
    cd ha-rutos-integration
    git checkout dev  # or any branch/PR
    ```

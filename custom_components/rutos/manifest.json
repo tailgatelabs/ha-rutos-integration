@@ -3,10 +3,10 @@
   "name": "RutOS",
   "codeowners": ["@crbn60"],
   "config_flow": true,
-  "documentation": "https://github.com/crbn60/ha-rutos-integration",
+  "documentation": "https://github.com/tailgatelabs/ha-rutos-integration",
   "integration_type": "hub",
   "iot_class": "local_polling",
-  "issue_tracker": "https://github.com/crbn60/ha-rutos-integration/issues",
+  "issue_tracker": "https://github.com/tailgatelabs/ha-rutos-integration/issues",
   "loggers": ["custom_components.rutos"],
   "version": "0.1.0"
 }

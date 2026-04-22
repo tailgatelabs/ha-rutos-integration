@@ -17,6 +17,17 @@ from .const import DEFAULT_SCAN_INTERVAL, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
+type _UpdateResult = tuple[
+    list[dict[str, Any]],
+    bool,
+    dict[str, Any] | None,
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+]
+
 
 @dataclass
 class RutOSData:
@@ -65,19 +76,9 @@ class RutOSDataUpdateCoordinator(DataUpdateCoordinator[RutOSData]):
         if self.data is None:
             self.data = RutOSData()
 
-        _ResultT = tuple[
-            list[dict[str, Any]],
-            bool,
-            dict[str, Any] | None,
-            list[dict[str, Any]],
-            list[dict[str, Any]],
-            list[dict[str, Any]],
-            list[dict[str, Any]],
-            list[dict[str, Any]],
-        ]
         try:
             results = cast(
-                _ResultT,
+                _UpdateResult,
                 await asyncio.gather(
                     self.api.get_wan_interfaces(),
                     self.api.get_internet_status(),

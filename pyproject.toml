@@ -1,3 +1,14 @@
+[tool.ruff.lint]
+extend-select = [
+    "ANN001",  # missing type annotation for function argument
+    "ANN201",  # missing return type for public function
+    "ANN202",  # missing return type for private function
+    "ANN204",  # missing return type for special method
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["ANN001", "ANN201", "ANN202", "ANN204"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"

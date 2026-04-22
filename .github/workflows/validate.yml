@@ -35,3 +35,16 @@ jobs:
       - run:
           pytest tests/ -v --cov=custom_components/rutos --cov-report=xml
           --cov-report=term-missing
+
+  typecheck:
+    name: Type Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - run: pip install -r requirements_dev.txt -r requirements_test.txt
+      - uses: jakebailey/pyright-action@v2
+        with:
+          project: pyrightconfig.json

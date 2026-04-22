@@ -3,5 +3,9 @@
   "venvPath": ".",
   "venv": ".venv",
   "pythonVersion": "3.14",
-  "typeCheckingMode": "basic"
+  "typeCheckingMode": "basic",
+  "reportMissingParameterType": "error",
+  "reportMissingTypeArgument": "error",
+  "reportUnknownParameterType": "error",
+  "reportInvalidTypeForm": "error"
 }

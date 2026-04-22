@@ -108,7 +108,7 @@ class RutOSAPI:
         self,
         method: str,
         path: str,
-        json_data: dict | None = None,
+        json_data: dict[str, Any] | None = None,
     ) -> Any:
         """Send an authenticated HTTP request, retrying once on 401."""
         url = self._url(path)

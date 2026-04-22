@@ -77,7 +77,9 @@ class RutOSFailoverSelect(RutOSEntity, SelectEntity):
     def current_option(self) -> str | None:
         """Determine the current option from mwan3 member metrics."""
         members = self.coordinator.data.failover_members
-        iface_metrics = {m.get("interface", ""): int(m.get("metric", 0)) for m in members}
+        iface_metrics = {
+            m.get("interface", ""): int(m.get("metric", 0)) for m in members
+        }
 
         active = self._active_groups()
         group_min_metrics: dict[str, int] = {}

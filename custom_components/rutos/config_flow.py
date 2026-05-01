@@ -144,6 +144,10 @@ class RutOSOptionsFlowHandler(OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Configure failover interface groups."""
+        coordinator = self.config_entry.runtime_data
+        if coordinator.data.failover_mode == "balance":
+            return await self.async_step_failover_balance(user_input)
+
         errors: dict[str, str] = {}
 
         if user_input is not None:
@@ -167,9 +171,9 @@ class RutOSOptionsFlowHandler(OptionsFlow):
                 self._options_data[CONF_FAILOVER_GROUPS] = groups
                 return self.async_create_entry(title="", data=self._options_data)
 
-        # Fetch current failover members, excluding disabled interfaces
-        coordinator = self.config_entry.runtime_data
-        members = await coordinator.api.get_failover_members()
+        # Use members from the active failover policy, restricted to interfaces
+        # currently present on the router.
+        members = coordinator.data.failover_members
         active_ifaces = {iface["name"] for iface in coordinator.data.wan_interfaces}
         members = [m for m in members if m.get("interface", "") in active_ifaces]
 
@@ -195,6 +199,20 @@ class RutOSOptionsFlowHandler(OptionsFlow):
             step_id="failover_groups",
             data_schema=vol.Schema(schema),
             errors=errors,
+        )
+
+    async def async_step_failover_balance(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Handle the case where the active policy is load-balance mode."""
+        if user_input is not None:
+            self._options_data[CONF_FAILOVER_GROUPS] = self.config_entry.options.get(
+                CONF_FAILOVER_GROUPS, {}
+            )
+            return self.async_create_entry(title="", data=self._options_data)
+        return self.async_show_form(
+            step_id="failover_balance",
+            data_schema=vol.Schema({}),
         )
 
 

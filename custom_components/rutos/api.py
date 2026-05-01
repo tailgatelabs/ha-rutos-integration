@@ -62,6 +62,42 @@ def _normalize_carriers(ca_signal: Any) -> list[dict[str, Any]]:
     return out
 
 
+def _resolve_active_policy_id(
+    rules: list[dict[str, Any]], policies: list[dict[str, Any]]
+) -> str | None:
+    """Pick the policy that drives default-bound traffic.
+
+    Prefers the rule named ``default_rule`` (Teltonika's catch-all), falls
+    back to the first rule, then to the only policy if exactly one exists.
+    """
+    if rules:
+        default_rule = next((r for r in rules if r.get("name") == "default_rule"), None)
+        rule = default_rule or rules[0]
+        policy_id = rule.get("use_policy")
+        if isinstance(policy_id, str) and policy_id:
+            return policy_id
+    if len(policies) == 1:
+        policy_id = policies[0].get("id")
+        if isinstance(policy_id, str) and policy_id:
+            return policy_id
+    return None
+
+
+def _detect_failover_mode(members: list[dict[str, Any]]) -> str:
+    """Return ``"balance"`` when members share the same metric, else ``"failover"``.
+
+    A load-balance policy assigns equal metrics to all members and uses
+    ``weight`` for traffic share; failover policies use distinct metrics for
+    priority. With fewer than 2 members the distinction is meaningless;
+    default to ``"failover"`` so the integration shows whatever single
+    interface exists.
+    """
+    if len(members) < 2:  # noqa: PLR2004
+        return "failover"
+    metrics = {m.get("metric") for m in members}
+    return "balance" if len(metrics) == 1 else "failover"
+
+
 class RutOSAPIError(Exception):
     """Base exception for RutOS API errors."""
 
@@ -483,20 +519,76 @@ class RutOSAPI:
             )
         return modems
 
-    async def set_failover_order(self, interfaces: list[str]) -> None:
-        """Set the failover order by updating mwan3 member metrics."""
+    async def set_failover_order(self, member_ids: list[str]) -> None:
+        """Set the failover order by updating mwan3 member metrics.
+
+        Caller must pass the active policy's member IDs (resolved via
+        ``get_active_failover_chain``) in the desired priority order.
+        """
         members = [
-            {"id": f"{iface_id}_member_mwan", "metric": str(idx + 1)}
-            for idx, iface_id in enumerate(interfaces)
+            {"id": member_id, "metric": str(idx + 1)}
+            for idx, member_id in enumerate(member_ids)
         ]
         await self.put("/failover/members/config", {"data": members})
 
-    async def get_failover_members(self) -> list[dict[str, Any]]:
-        """Fetch mwan3 failover member configs (priority metrics)."""
+    async def get_failover_policies(self) -> list[dict[str, Any]]:
+        """Fetch mwan3 policy configs."""
+        data = await self.get("/failover/policies/config")
+        if not isinstance(data, list):
+            return []
+        return data
+
+    async def get_failover_rules(self) -> list[dict[str, Any]]:
+        """Fetch mwan3 rule configs (which traffic uses which policy)."""
+        data = await self.get("/failover/rules/config")
+        if not isinstance(data, list):
+            return []
+        return data
+
+    async def get_active_failover_chain(self) -> dict[str, Any]:
+        """Resolve the active failover chain.
+
+        Reads policies and rules, picks the active policy from the default
+        rule (or first rule, or the only policy), and returns its members
+        in policy-defined order along with a mode flag.
+
+        Returns a dict with keys:
+            policy_id: str | None - active policy id, None if not resolvable
+            mode: "failover" | "balance" - balance when all members share metric
+            members: list[dict] - member dicts (id, interface, metric, ...) in
+                policy order, filtered to only those in use_member.
+        """
+        policies, rules, all_members = await asyncio.gather(
+            self.get_failover_policies(),
+            self.get_failover_rules(),
+            self._get_all_failover_members(),
+        )
+
+        policy_id = _resolve_active_policy_id(rules, policies)
+        if policy_id is None:
+            return {"policy_id": None, "mode": "failover", "members": []}
+
+        policy = next((p for p in policies if p.get("id") == policy_id), None)
+        if policy is None:
+            return {"policy_id": None, "mode": "failover", "members": []}
+
+        use_member = policy.get("use_member") or []
+        members_by_id = {m.get("id"): m for m in all_members}
+        ordered_members: list[dict[str, Any]] = []
+        for member_id in use_member:
+            member = members_by_id.get(member_id)
+            if member is not None:
+                ordered_members.append(member)
+
+        mode = _detect_failover_mode(ordered_members)
+        return {"policy_id": policy_id, "mode": mode, "members": ordered_members}
+
+    async def _get_all_failover_members(self) -> list[dict[str, Any]]:
+        """Fetch all mwan3 member configs (no naming-based filter)."""
         data = await self.get("/failover/members/config")
         if not isinstance(data, list):
             return []
-        return [m for m in data if m.get("id", "").endswith("_member_mwan")]
+        return data
 
     async def get_gps_position(self) -> dict[str, Any] | None:
         """Fetch GPS position data (lat, lon, speed, altitude, etc.)."""

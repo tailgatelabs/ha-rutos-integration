@@ -674,14 +674,20 @@ class TestSetFailoverOrder:
     """Tests for set_failover_order."""
 
     async def test_set_failover_order(self, api_client):
-        """Test sets mwan3 member metrics via single bulk PUT."""
+        """Test sets mwan3 member metrics via single bulk PUT.
+
+        The API method now takes pre-resolved member IDs, so the caller is
+        responsible for the member-ID/interface-ID translation (typically via
+        get_active_failover_chain).
+        """
         with aioresponses() as m:
             m.post(_url("/login"), payload=_login_success())
             m.put(_url("/failover/members/config"), payload=_success())
 
-            await api_client.set_failover_order(["wan1", "mob1s1a1"])
+            await api_client.set_failover_order(
+                ["wan1_member_mwan", "mob1s1a1_member_mwan"]
+            )
 
-            # Verify single PUT call with array payload
             put_requests = []
             for key, requests in m.requests.items():
                 if key[0] == "PUT":
@@ -695,6 +701,102 @@ class TestSetFailoverOrder:
                     {"id": "mob1s1a1_member_mwan", "metric": "2"},
                 ]
             }
+
+
+class TestGetActiveFailoverChain:
+    """Tests for get_active_failover_chain."""
+
+    @staticmethod
+    def _failover_setup(
+        m: aioresponses,
+        *,
+        rules: list[dict] | None = None,
+        policies: list[dict] | None = None,
+        members: list[dict] | None = None,
+    ) -> None:
+        """Stub the policies/rules/members endpoints with given payloads."""
+        m.post(_url("/login"), payload=_login_success())
+        m.get(_url("/failover/policies/config"), payload=_success(policies or []))
+        m.get(_url("/failover/rules/config"), payload=_success(rules or []))
+        m.get(_url("/failover/members/config"), payload=_success(members or []))
+
+    async def test_failover_mode_with_default_rule(self, api_client):
+        """Default rule selects the failover policy; mode is 'failover'."""
+        with aioresponses() as m:
+            self._failover_setup(
+                m,
+                rules=[{"id": "default_rule", "name": "default_rule",
+                        "use_policy": "mwan_default"}],
+                policies=[{
+                    "id": "mwan_default", "name": "mwan",
+                    "use_member": ["mob1s1a1_member_mwan", "wan1_member_mwan"],
+                }],
+                members=[
+                    {"id": "mob1s1a1_member_mwan", "interface": "mob1s1a1",
+                     "metric": "1"},
+                    {"id": "wan1_member_mwan", "interface": "wan1", "metric": "2"},
+                ],
+            )
+            chain = await api_client.get_active_failover_chain()
+
+        assert chain["policy_id"] == "mwan_default"
+        assert chain["mode"] == "failover"
+        assert [m["id"] for m in chain["members"]] == [
+            "mob1s1a1_member_mwan",
+            "wan1_member_mwan",
+        ]
+
+    async def test_balance_mode_detected_via_equal_metrics(self, api_client):
+        """Members all sharing one metric => balance mode."""
+        with aioresponses() as m:
+            self._failover_setup(
+                m,
+                rules=[{"id": "default_rule", "name": "default_rule",
+                        "use_policy": "balance_default"}],
+                policies=[{
+                    "id": "balance_default", "name": "balance",
+                    "use_member": [
+                        "mob1s1a1_member_balance", "wan1_member_balance",
+                    ],
+                }],
+                members=[
+                    {"id": "mob1s1a1_member_balance", "interface": "mob1s1a1",
+                     "metric": "1", "weight": "1"},
+                    {"id": "wan1_member_balance", "interface": "wan1",
+                     "metric": "1", "weight": "1"},
+                ],
+            )
+            chain = await api_client.get_active_failover_chain()
+
+        assert chain["mode"] == "balance"
+        assert chain["policy_id"] == "balance_default"
+
+    async def test_no_naming_assumption_in_discovery(self, api_client):
+        """Discovery works regardless of member-ID suffix (regression #38)."""
+        with aioresponses() as m:
+            self._failover_setup(
+                m,
+                rules=[{"id": "rule1", "name": "default_rule",
+                        "use_policy": "p1"}],
+                policies=[{"id": "p1", "name": "p1",
+                           "use_member": ["custom_a", "custom_b"]}],
+                members=[
+                    {"id": "custom_a", "interface": "wan1", "metric": "1"},
+                    {"id": "custom_b", "interface": "mob1", "metric": "2"},
+                ],
+            )
+            chain = await api_client.get_active_failover_chain()
+
+        assert chain["mode"] == "failover"
+        assert [m["interface"] for m in chain["members"]] == ["wan1", "mob1"]
+
+    async def test_empty_when_no_rules_or_policies(self, api_client):
+        """No rules and no policies => empty chain, default failover mode."""
+        with aioresponses() as m:
+            self._failover_setup(m, rules=[], policies=[], members=[])
+            chain = await api_client.get_active_failover_chain()
+
+        assert chain == {"policy_id": None, "mode": "failover", "members": []}
 
 
 class TestPostMethod:

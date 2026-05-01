@@ -23,6 +23,8 @@ async def async_setup_entry(
     groups: dict[str, list[str]] = entry.options.get(CONF_FAILOVER_GROUPS, {})
     if len(groups) < 2:  # noqa: PLR2004
         return
+    if entry.runtime_data.data.failover_mode == "balance":
+        return
     async_add_entities([RutOSFailoverSelect(entry.runtime_data, groups)])
 
 
@@ -99,8 +101,16 @@ class RutOSFailoverSelect(RutOSEntity, SelectEntity):
     async def async_select_option(self, option: str) -> None:
         """Set the failover order for the selected permutation."""
         group_order = [g.strip() for g in option.split(", ")]
-        interfaces: list[str] = []
+        iface_to_member: dict[str, str] = {
+            m["interface"]: m["id"]
+            for m in self.coordinator.data.failover_members
+            if m.get("interface") and m.get("id")
+        }
+        member_ids: list[str] = []
         for label in group_order:
-            interfaces.extend(self._groups[label])
-        await self.coordinator.api.set_failover_order(interfaces)
+            for iface in self._groups[label]:
+                member_id = iface_to_member.get(iface)
+                if member_id:
+                    member_ids.append(member_id)
+        await self.coordinator.api.set_failover_order(member_ids)
         await self.coordinator.async_request_refresh()

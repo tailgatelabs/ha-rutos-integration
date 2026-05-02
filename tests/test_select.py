@@ -120,6 +120,41 @@ class TestRutOSFailoverSelect:
         assert "Cellular, Starlink" in entity.options
         assert "Starlink, Cellular" in entity.options
 
+    def test_unavailable_when_mode_flips_to_balance(self, mock_coordinator):
+        """Entity becomes unavailable if the router switches to balance mode at runtime."""
+        entity = RutOSFailoverSelect(mock_coordinator, GROUPS)
+        assert entity.available is True
+
+        mock_coordinator.data.failover_chain = _chain(
+            [
+                {"id": "mob1s1a1_member_balance", "interface": "mob1s1a1",
+                 "metric": "1"},
+                {"id": "wan1_member_balance", "interface": "wan1", "metric": "1"},
+            ],
+            mode="balance",
+        )
+        assert entity.available is False
+
+    @pytest.mark.asyncio
+    async def test_select_option_raises_in_balance_mode(self, mock_coordinator):
+        """async_select_option raises HomeAssistantError if mode is balance."""
+        from homeassistant.exceptions import HomeAssistantError
+
+        entity = RutOSFailoverSelect(mock_coordinator, GROUPS)
+        mock_coordinator.data.failover_chain = _chain(
+            [
+                {"id": "mob1s1a1_member_balance", "interface": "mob1s1a1",
+                 "metric": "1"},
+                {"id": "wan1_member_balance", "interface": "wan1", "metric": "1"},
+            ],
+            mode="balance",
+        )
+
+        with pytest.raises(HomeAssistantError, match="load-balance"):
+            await entity.async_select_option("Cellular, Starlink, WiFi")
+
+        mock_coordinator.api.set_failover_order.assert_not_awaited()
+
 
 @pytest.mark.asyncio
 async def test_async_setup_entry_skips_in_balance_mode(hass, mock_coordinator):

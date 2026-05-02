@@ -6,6 +6,7 @@ import itertools
 
 from homeassistant.components.select import SelectEntity
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import RutOSConfigEntry
@@ -72,7 +73,9 @@ class RutOSFailoverSelect(RutOSEntity, SelectEntity):
 
     @property
     def available(self) -> bool:
-        """Return False if fewer than 2 groups are active."""
+        """Return False if balance mode is active or fewer than 2 groups are active."""
+        if self.coordinator.data.failover_mode == "balance":
+            return False
         return len(self._active_groups()) >= 2  # noqa: PLR2004
 
     @property
@@ -100,6 +103,11 @@ class RutOSFailoverSelect(RutOSEntity, SelectEntity):
 
     async def async_select_option(self, option: str) -> None:
         """Set the failover order for the selected permutation."""
+        if self.coordinator.data.failover_mode == "balance":
+            raise HomeAssistantError(
+                "Cannot set failover order: router's active mwan3 policy "
+                "is in load-balance mode."
+            )
         group_order = [g.strip() for g in option.split(", ")]
         iface_to_member: dict[str, str] = {
             m["interface"]: m["id"]

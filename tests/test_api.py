@@ -713,12 +713,16 @@ class TestGetActiveFailoverChain:
         rules: list[dict] | None = None,
         policies: list[dict] | None = None,
         members: list[dict] | None = None,
+        interfaces: list[dict] | None = None,
     ) -> None:
-        """Stub the policies/rules/members endpoints with given payloads."""
+        """Stub the policies/rules/members/interfaces endpoints."""
         m.post(_url("/login"), payload=_login_success())
         m.get(_url("/failover/policies/config"), payload=_success(policies or []))
         m.get(_url("/failover/rules/config"), payload=_success(rules or []))
         m.get(_url("/failover/members/config"), payload=_success(members or []))
+        m.get(
+            _url("/failover/interfaces/config"), payload=_success(interfaces or [])
+        )
 
     async def test_failover_mode_with_default_rule(self, api_client):
         """Default rule selects the failover policy; mode is 'failover'."""
@@ -736,6 +740,10 @@ class TestGetActiveFailoverChain:
                      "metric": "1"},
                     {"id": "wan1_member_mwan", "interface": "wan1", "metric": "2"},
                 ],
+                interfaces=[
+                    {"id": "mob1s1a1", "name": "mob1s1a1"},
+                    {"id": "wan1", "name": "wan1"},
+                ],
             )
             chain = await api_client.get_active_failover_chain()
 
@@ -745,6 +753,59 @@ class TestGetActiveFailoverChain:
             "mob1s1a1_member_mwan",
             "wan1_member_mwan",
         ]
+        assert [m["network_id"] for m in chain["members"]] == ["mob1s1a1", "wan1"]
+
+    async def test_member_interface_resolved_via_mwan_interface_bridge(
+        self, api_client
+    ):
+        """``mwan_member.interface`` is the mwan_interface display name, not its id.
+
+        Regression for #38: when the user customizes the display name (or wifi
+        interfaces, where defaults already differ), ``member.interface`` no
+        longer matches the network UCI id and we have to bridge through
+        ``/failover/interfaces/config`` (``mwan_interface.name`` →
+        ``mwan_interface.id``).
+        """
+        with aioresponses() as m:
+            self._failover_setup(
+                m,
+                rules=[{"id": "default_rule", "name": "default_rule",
+                        "use_policy": "mwan_default"}],
+                policies=[{
+                    "id": "mwan_default", "name": "mwan",
+                    "use_member": ["wan2_member_mwan"],
+                }],
+                members=[
+                    {"id": "wan2_member_mwan", "interface": "wifi1", "metric": "1"},
+                ],
+                interfaces=[
+                    {"id": "wan2", "name": "wifi1"},
+                ],
+            )
+            chain = await api_client.get_active_failover_chain()
+
+        assert chain["members"][0]["interface"] == "wifi1"
+        assert chain["members"][0]["network_id"] == "wan2"
+
+    async def test_member_network_id_none_when_bridge_missing(self, api_client):
+        """``network_id`` is None if no mwan_interface entry matches."""
+        with aioresponses() as m:
+            self._failover_setup(
+                m,
+                rules=[{"id": "default_rule", "name": "default_rule",
+                        "use_policy": "mwan_default"}],
+                policies=[{
+                    "id": "mwan_default", "name": "mwan",
+                    "use_member": ["orphan_member"],
+                }],
+                members=[
+                    {"id": "orphan_member", "interface": "ghost", "metric": "1"},
+                ],
+                interfaces=[],
+            )
+            chain = await api_client.get_active_failover_chain()
+
+        assert chain["members"][0]["network_id"] is None
 
     async def test_balance_mode_detected_via_equal_metrics(self, api_client):
         """Members all sharing one metric => balance mode."""

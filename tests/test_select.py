@@ -17,8 +17,15 @@ GROUPS = {
 
 
 def _chain(members: list[dict], mode: str = "failover") -> dict:
-    """Build an active-failover-chain dict for tests."""
-    return {"policy_id": "mwan_default", "mode": mode, "members": members}
+    """Build an active-failover-chain dict for tests.
+
+    Defaults each member's ``network_id`` to its ``interface`` value so legacy
+    tests (where the two coincide) don't need to spell it out.
+    """
+    enriched = [
+        {**m, "network_id": m.get("network_id", m.get("interface"))} for m in members
+    ]
+    return {"policy_id": "mwan_default", "mode": mode, "members": enriched}
 
 
 class TestRutOSFailoverSelect:

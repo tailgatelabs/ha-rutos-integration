@@ -228,12 +228,39 @@ def mock_modems() -> list[dict]:
 
 @pytest.fixture
 def mock_failover_members() -> list[dict]:
-    """Return mock failover member data (failover-mode policy)."""
+    """Return mock failover member data (failover-mode policy).
+
+    Note ``interface`` holds the mwan_interface display name (the user-facing
+    name), while ``network_id`` is the canonical UCI id resolved through the
+    mwan_interface bridge table — that's what the integration uses to match
+    against ``wan_interfaces[i]["name"]``. The ``wan2``/``wifi1`` row is the
+    realistic case where the two diverge.
+    """
     return [
-        {"id": "mob1s1a1_member_mwan", "interface": "mob1s1a1", "metric": "1"},
-        {"id": "mob1s2a1_member_mwan", "interface": "mob1s2a1", "metric": "2"},
-        {"id": "wan1_member_mwan", "interface": "wan1", "metric": "3"},
-        {"id": "wan2_member_mwan", "interface": "wan2", "metric": "4"},
+        {
+            "id": "mob1s1a1_member_mwan",
+            "interface": "mob1s1a1",
+            "network_id": "mob1s1a1",
+            "metric": "1",
+        },
+        {
+            "id": "mob1s2a1_member_mwan",
+            "interface": "mob1s2a1",
+            "network_id": "mob1s2a1",
+            "metric": "2",
+        },
+        {
+            "id": "wan1_member_mwan",
+            "interface": "wan1",
+            "network_id": "wan1",
+            "metric": "3",
+        },
+        {
+            "id": "wan2_member_mwan",
+            "interface": "wifi1",
+            "network_id": "wan2",
+            "metric": "4",
+        },
     ]
 
 
@@ -323,10 +350,30 @@ def mock_api(mock_device_info, mock_wan_interfaces) -> AsyncMock:
         "policy_id": "mwan_default",
         "mode": "failover",
         "members": [
-            {"id": "mob1s1a1_member_mwan", "interface": "mob1s1a1", "metric": "1"},
-            {"id": "mob1s2a1_member_mwan", "interface": "mob1s2a1", "metric": "2"},
-            {"id": "wan1_member_mwan", "interface": "wan1", "metric": "3"},
-            {"id": "wan2_member_mwan", "interface": "wan2", "metric": "4"},
+            {
+                "id": "mob1s1a1_member_mwan",
+                "interface": "mob1s1a1",
+                "network_id": "mob1s1a1",
+                "metric": "1",
+            },
+            {
+                "id": "mob1s2a1_member_mwan",
+                "interface": "mob1s2a1",
+                "network_id": "mob1s2a1",
+                "metric": "2",
+            },
+            {
+                "id": "wan1_member_mwan",
+                "interface": "wan1",
+                "network_id": "wan1",
+                "metric": "3",
+            },
+            {
+                "id": "wan2_member_mwan",
+                "interface": "wifi1",
+                "network_id": "wan2",
+                "metric": "4",
+            },
         ],
     }
     api.reboot_modem.return_value = None

@@ -83,7 +83,9 @@ class RutOSFailoverSelect(RutOSEntity, SelectEntity):
         """Determine the current option from mwan3 member metrics."""
         members = self.coordinator.data.failover_members
         iface_metrics = {
-            m.get("interface", ""): int(m.get("metric", 0)) for m in members
+            m["network_id"]: int(m.get("metric", 0))
+            for m in members
+            if m.get("network_id")
         }
 
         active = self._active_groups()
@@ -110,9 +112,9 @@ class RutOSFailoverSelect(RutOSEntity, SelectEntity):
             )
         group_order = [g.strip() for g in option.split(", ")]
         iface_to_member: dict[str, str] = {
-            m["interface"]: m["id"]
+            m["network_id"]: m["id"]
             for m in self.coordinator.data.failover_members
-            if m.get("interface") and m.get("id")
+            if m.get("network_id") and m.get("id")
         }
         member_ids: list[str] = []
         for label in group_order:

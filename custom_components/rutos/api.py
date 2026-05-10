@@ -545,24 +545,47 @@ class RutOSAPI:
             return []
         return data
 
+    async def get_failover_interfaces(self) -> list[dict[str, Any]]:
+        """Fetch mwan3 interface configs (the bridge to network interfaces).
+
+        Each entry has ``id`` (matches network interface UCI id) and ``name``
+        (matches the display name used in ``mwan_member.interface``).
+        """
+        data = await self.get("/failover/interfaces/config")
+        if not isinstance(data, list):
+            return []
+        return data
+
     async def get_active_failover_chain(self) -> dict[str, Any]:
         """Resolve the active failover chain.
 
-        Reads policies and rules, picks the active policy from the default
-        rule (or first rule, or the only policy), and returns its members
-        in policy-defined order along with a mode flag.
+        Reads policies, rules, members, and the mwan_interface bridge table,
+        picks the active policy from the default rule (or first rule, or the
+        only policy), and returns its members in policy-defined order. Each
+        returned member has a ``network_id`` field set to the UCI id of the
+        underlying network interface — derived by mapping
+        ``mwan_member.interface`` (a display name) through
+        ``mwan_interface.name`` to ``mwan_interface.id``. ``network_id`` is
+        ``None`` when the bridge entry is missing.
 
         Returns a dict with keys:
             policy_id: str | None - active policy id, None if not resolvable
             mode: "failover" | "balance" - balance when all members share metric
-            members: list[dict] - member dicts (id, interface, metric, ...) in
-                policy order, filtered to only those in use_member.
+            members: list[dict] - member dicts in policy order with
+                ``network_id`` attached.
         """
-        policies, rules, all_members = await asyncio.gather(
+        policies, rules, all_members, fo_interfaces = await asyncio.gather(
             self.get_failover_policies(),
             self.get_failover_rules(),
             self._get_all_failover_members(),
+            self.get_failover_interfaces(),
         )
+
+        network_id_by_mwan_name = {
+            fi.get("name"): fi.get("id")
+            for fi in fo_interfaces
+            if isinstance(fi.get("name"), str) and isinstance(fi.get("id"), str)
+        }
 
         policy_id = _resolve_active_policy_id(rules, policies)
         if policy_id is None:
@@ -578,7 +601,11 @@ class RutOSAPI:
         for member_id in use_member:
             member = members_by_id.get(member_id)
             if member is not None:
-                ordered_members.append(member)
+                resolved = dict(member)
+                resolved["network_id"] = network_id_by_mwan_name.get(
+                    member.get("interface")
+                )
+                ordered_members.append(resolved)
 
         mode = _detect_failover_mode(ordered_members)
         return {"policy_id": policy_id, "mode": mode, "members": ordered_members}

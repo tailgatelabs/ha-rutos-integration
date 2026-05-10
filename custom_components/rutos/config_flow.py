@@ -172,10 +172,15 @@ class RutOSOptionsFlowHandler(OptionsFlow):
                 return self.async_create_entry(title="", data=self._options_data)
 
         # Use members from the active failover policy, restricted to interfaces
-        # currently present on the router.
-        members = coordinator.data.failover_members
-        active_ifaces = {iface["name"] for iface in coordinator.data.wan_interfaces}
-        members = [m for m in members if m.get("interface", "") in active_ifaces]
+        # currently present on the router. Members carry a ``network_id``
+        # resolved through the mwan_interface bridge table; that's the UCI id
+        # which lines up with ``wan_interfaces[i]["name"]``.
+        active_ids = {iface["name"] for iface in coordinator.data.wan_interfaces}
+        members = [
+            m
+            for m in coordinator.data.failover_members
+            if m.get("network_id") in active_ids
+        ]
 
         # Build reverse map: iface_id → existing label
         existing_groups: dict[str, list[str]] = self.config_entry.options.get(
@@ -186,10 +191,11 @@ class RutOSOptionsFlowHandler(OptionsFlow):
             for iface in ifaces:
                 existing_labels[iface] = label
 
-        # Build dynamic schema: one text field per interface
+        # Build dynamic schema: one text field per interface, keyed by the
+        # canonical UCI id (stable across user-driven display name changes).
         schema: dict[vol.Required, type] = {}
         for member in sorted(members, key=lambda m: int(m.get("metric", 0))):
-            iface_id = member.get("interface", member.get("id", ""))
+            iface_id = member["network_id"]
             default = existing_labels.get(iface_id, iface_id)
             if user_input and iface_id in user_input:
                 default = user_input[iface_id]

@@ -78,8 +78,18 @@ def mock_api_instance():
         "policy_id": "mwan_default",
         "mode": "failover",
         "members": [
-            {"id": "wan_member_mwan", "interface": "wan", "metric": "1"},
-            {"id": "mob1s1a1_member_mwan", "interface": "mob1s1a1", "metric": "2"},
+            {
+                "id": "wan_member_mwan",
+                "interface": "wan",
+                "network_id": "wan",
+                "metric": "1",
+            },
+            {
+                "id": "mob1s1a1_member_mwan",
+                "interface": "mob1s1a1",
+                "network_id": "mob1s1a1",
+                "metric": "2",
+            },
         ],
     }
     api.set_failover_order.return_value = None

@@ -188,9 +188,9 @@ def _register_services(hass: HomeAssistant) -> None:
                 )
 
             iface_to_member: dict[str, str] = {
-                m["interface"]: m["id"]
+                m["network_id"]: m["id"]
                 for m in coordinator.data.failover_members
-                if m.get("interface") and m.get("id")
+                if m.get("network_id") and m.get("id")
             }
             unknown = [i for i in interfaces if i not in iface_to_member]
             if unknown:

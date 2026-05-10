@@ -77,6 +77,10 @@
       "failover_groups": {
         "title": "Failover groups",
         "description": "Assign a label to each failover interface. Interfaces with the same label are grouped and reordered together."
+      },
+      "failover_balance": {
+        "title": "Failover priority unavailable",
+        "description": "The router's active mwan3 policy is configured for load balancing, not failover. Priority cannot be set in this mode. Switch the router to mwan failover mode to enable this feature."
       }
     },
     "error": {

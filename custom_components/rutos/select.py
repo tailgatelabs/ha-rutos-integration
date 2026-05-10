@@ -6,6 +6,7 @@ import itertools
 
 from homeassistant.components.select import SelectEntity
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import RutOSConfigEntry
@@ -22,6 +23,8 @@ async def async_setup_entry(
     """Set up the failover priority select."""
     groups: dict[str, list[str]] = entry.options.get(CONF_FAILOVER_GROUPS, {})
     if len(groups) < 2:  # noqa: PLR2004
+        return
+    if entry.runtime_data.data.failover_mode == "balance":
         return
     async_add_entities([RutOSFailoverSelect(entry.runtime_data, groups)])
 
@@ -70,7 +73,9 @@ class RutOSFailoverSelect(RutOSEntity, SelectEntity):
 
     @property
     def available(self) -> bool:
-        """Return False if fewer than 2 groups are active."""
+        """Return False if balance mode is active or fewer than 2 groups are active."""
+        if self.coordinator.data.failover_mode == "balance":
+            return False
         return len(self._active_groups()) >= 2  # noqa: PLR2004
 
     @property
@@ -78,7 +83,9 @@ class RutOSFailoverSelect(RutOSEntity, SelectEntity):
         """Determine the current option from mwan3 member metrics."""
         members = self.coordinator.data.failover_members
         iface_metrics = {
-            m.get("interface", ""): int(m.get("metric", 0)) for m in members
+            m["network_id"]: int(m.get("metric", 0))
+            for m in members
+            if m.get("network_id")
         }
 
         active = self._active_groups()
@@ -98,9 +105,22 @@ class RutOSFailoverSelect(RutOSEntity, SelectEntity):
 
     async def async_select_option(self, option: str) -> None:
         """Set the failover order for the selected permutation."""
+        if self.coordinator.data.failover_mode == "balance":
+            raise HomeAssistantError(
+                "Cannot set failover order: router's active mwan3 policy "
+                "is in load-balance mode."
+            )
         group_order = [g.strip() for g in option.split(", ")]
-        interfaces: list[str] = []
+        iface_to_member: dict[str, str] = {
+            m["network_id"]: m["id"]
+            for m in self.coordinator.data.failover_members
+            if m.get("network_id") and m.get("id")
+        }
+        member_ids: list[str] = []
         for label in group_order:
-            interfaces.extend(self._groups[label])
-        await self.coordinator.api.set_failover_order(interfaces)
+            for iface in self._groups[label]:
+                member_id = iface_to_member.get(iface)
+                if member_id:
+                    member_ids.append(member_id)
+        await self.coordinator.api.set_failover_order(member_ids)
         await self.coordinator.async_request_refresh()

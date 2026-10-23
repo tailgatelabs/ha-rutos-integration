@@ -508,9 +508,52 @@ class RutOSActiveWANSensor(RutOSEntity, SensorEntity):
 
     @property
     def native_value(self) -> str | None:
-        """Return the label of the active (first up) WAN interface."""
-        for iface in self.coordinator.data.wan_interfaces:
+        """Return the label of the WAN interface currently carrying traffic."""
+        name = self._active_interface()
+        if name is None:
+            return None
+        if label := self._iface_labels.get(name):
+            return label
+        iface = next(
+            (i for i in self.coordinator.data.wan_interfaces if i["name"] == name),
+            None,
+        )
+        return (iface or {}).get("label") or name
+
+    def _active_interface(self) -> str | None:
+        """Resolve the active WAN interface id.
+
+        Prefer mwan3's tracking state: the highest-priority member of the
+        active policy (lowest member metric) that mwan3 reports online. Link
+        state alone is not enough, since an interface can keep its link while
+        mwan3 has failed over because tracking pings fail (issue #43). Fall
+        back to the first link-up interface when failover data is unavailable.
+        """
+        data = self.coordinator.data
+        if data.failover_status and data.failover_members:
+            members = sorted(
+                data.failover_members, key=lambda m: int(m.get("metric", 0))
+            )
+            for member in members:
+                net_id = member.get("network_id")
+                status = data.failover_status.get(net_id) if net_id else None
+                if status is not None and _mwan_is_online(status):
+                    return net_id
+            return None
+
+        for iface in data.wan_interfaces:
             if iface.get("status") == "up":
-                name = iface["name"]
-                return self._iface_labels.get(name) or iface.get("label") or name
+                return iface["name"]
         return None
+
+
+def _mwan_is_online(status: dict[str, Any]) -> bool:
+    """Return True when mwan3 would route traffic over this interface.
+
+    Interfaces without tracking IPs report ``notracking``; mwan3 treats those
+    as online whenever the link is up.
+    """
+    state = status.get("status")
+    if state == "online":
+        return True
+    return state == "notracking" and bool(status.get("up"))

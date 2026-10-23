@@ -376,6 +376,12 @@ def mock_api(mock_device_info, mock_wan_interfaces) -> AsyncMock:
             },
         ],
     }
+    api.get_failover_status.return_value = {
+        "mob1s1a1": {"status": "online", "up": True},
+        "mob1s2a1": {"status": "standby", "up": True},
+        "wan1": {"status": "standby", "up": True},
+        "wan2": {"status": "disabled", "up": False},
+    }
     api.reboot_modem.return_value = None
     api.set_interface_enabled.return_value = None
     api.set_failover_order.return_value = None

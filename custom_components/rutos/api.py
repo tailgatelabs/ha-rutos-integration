@@ -9,9 +9,16 @@ from typing import Any
 
 import aiohttp
 
-from .const import API_PATH, SESSION_REFRESH_MARGIN
+from .const import (
+    API_PATH,
+    MAX_CONCURRENT_REQUESTS,
+    REQUEST_TIMEOUT,
+    SESSION_REFRESH_MARGIN,
+)
 
 _LOGGER = logging.getLogger(__name__)
+
+_TIMEOUT = aiohttp.ClientTimeout(total=REQUEST_TIMEOUT)
 
 
 def _extract_ip(iface: dict[str, Any]) -> str | None:
@@ -129,6 +136,7 @@ class RutOSAPI:
         self._token: str | None = None
         self._token_expiry: float = 0
         self._lock = asyncio.Lock()
+        self._request_slots = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
 
     def _url(self, path: str) -> str:
         """Build a full URL for the given API path."""
@@ -152,18 +160,27 @@ class RutOSAPI:
             await self._ensure_session()
             headers = self._auth_headers()
             try:
-                async with self._session.request(
-                    method,
-                    url,
-                    json=json_data,
-                    headers=headers,
-                    ssl=False,
-                ) as resp:
+                async with (
+                    self._request_slots,
+                    self._session.request(
+                        method,
+                        url,
+                        json=json_data,
+                        headers=headers,
+                        ssl=False,
+                        timeout=_TIMEOUT,
+                    ) as resp,
+                ):
                     status = resp.status
                     try:
                         data = await resp.json(content_type=None)
                     except (ValueError, aiohttp.ContentTypeError):
                         data = None
+            except TimeoutError as err:
+                raise RutOSConnectionError(
+                    f"Timed out after {REQUEST_TIMEOUT}s requesting {path} "
+                    f"from {self._host}"
+                ) from err
             except aiohttp.ClientConnectionError as err:
                 raise RutOSConnectionError(
                     f"Cannot connect to {self._host}: {err}"
@@ -207,15 +224,23 @@ class RutOSAPI:
         url = self._url("/login")
         payload = {"username": self._username, "password": self._password}
         try:
-            async with self._session.post(
-                url,
-                json=payload,
-                ssl=False,
-            ) as resp:
+            async with (
+                self._request_slots,
+                self._session.post(
+                    url,
+                    json=payload,
+                    ssl=False,
+                    timeout=_TIMEOUT,
+                ) as resp,
+            ):
                 try:
                     data = await resp.json(content_type=None)
                 except (ValueError, aiohttp.ContentTypeError):
                     data = None
+        except TimeoutError as err:
+            raise RutOSConnectionError(
+                f"Timed out after {REQUEST_TIMEOUT}s logging in to {self._host}"
+            ) from err
         except aiohttp.ClientConnectionError as err:
             raise RutOSConnectionError(
                 f"Cannot connect to {self._host}: {err}"

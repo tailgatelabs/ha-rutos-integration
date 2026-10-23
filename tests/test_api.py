@@ -6,7 +6,7 @@ import asyncio
 import time
 import aiohttp
 import pytest
-from aioresponses import aioresponses
+from aioresponses import CallbackResult, aioresponses
 
 from custom_components.rutos.api import (
     RutOSAPI,
@@ -14,7 +14,12 @@ from custom_components.rutos.api import (
     RutOSAuthError,
     RutOSConnectionError,
 )
-from custom_components.rutos.const import API_PATH, SESSION_REFRESH_MARGIN
+from custom_components.rutos.const import (
+    API_PATH,
+    MAX_CONCURRENT_REQUESTS,
+    REQUEST_TIMEOUT,
+    SESSION_REFRESH_MARGIN,
+)
 
 TEST_HOST = "192.168.1.1"
 TEST_BASE_URL = f"https://{TEST_HOST}{API_PATH}"
@@ -125,6 +130,24 @@ class TestLogin:
             with pytest.raises(RutOSConnectionError, match="Cannot connect"):
                 await api_client.login()
 
+    async def test_login_timeout(self, api_client):
+        """Test a stalled login raises RutOSConnectionError instead of hanging."""
+        with aioresponses() as m:
+            m.post(_url("/login"), exception=TimeoutError())
+
+            with pytest.raises(RutOSConnectionError, match="Timed out"):
+                await api_client.login()
+
+    async def test_login_sets_request_timeout(self, api_client):
+        """Test login passes an explicit per-request timeout."""
+        with aioresponses() as m:
+            m.post(_url("/login"), payload=_login_success())
+
+            await api_client.login()
+
+            request = next(iter(m.requests.values()))[0]
+            assert request.kwargs["timeout"].total == REQUEST_TIMEOUT
+
 
 class TestRequest:
     """Tests for the authenticated _request method."""
@@ -171,6 +194,52 @@ class TestRequest:
 
             with pytest.raises(RutOSConnectionError, match="Cannot connect"):
                 await api_client.get("/test")
+
+    async def test_request_timeout(self, api_client):
+        """Test a stalled request raises RutOSConnectionError instead of hanging."""
+        with aioresponses() as m:
+            m.post(_url("/login"), payload=_login_success())
+            m.get(_url("/test"), exception=TimeoutError())
+
+            with pytest.raises(RutOSConnectionError, match="Timed out"):
+                await api_client.get("/test")
+
+    # aioresponses inspects async callbacks with a deprecated asyncio helper.
+    @pytest.mark.filterwarnings(
+        "ignore:'asyncio.iscoroutinefunction' is deprecated:DeprecationWarning"
+    )
+    async def test_requests_capped_at_max_concurrency(self, api_client):
+        """Test parallel requests never exceed MAX_CONCURRENT_REQUESTS in flight."""
+        in_flight = 0
+        peak = 0
+
+        async def _slow_response(url, **kwargs):
+            nonlocal in_flight, peak
+            in_flight += 1
+            peak = max(peak, in_flight)
+            await asyncio.sleep(0.01)
+            in_flight -= 1
+            return CallbackResult(payload=_success())
+
+        with aioresponses() as m:
+            m.post(_url("/login"), payload=_login_success())
+            m.get(_url("/test"), callback=_slow_response, repeat=True)
+
+            await asyncio.gather(*(api_client.get("/test") for _ in range(12)))
+
+        assert peak == MAX_CONCURRENT_REQUESTS
+
+    async def test_request_sets_request_timeout(self, api_client):
+        """Test authenticated requests pass an explicit per-request timeout."""
+        with aioresponses() as m:
+            m.post(_url("/login"), payload=_login_success())
+            m.get(_url("/test"), payload=_success())
+
+            await api_client.get("/test")
+
+            for key, requests in m.requests.items():
+                if key[0] == "GET":
+                    assert requests[0].kwargs["timeout"].total == REQUEST_TIMEOUT
 
     async def test_request_api_error(self, api_client):
         """Test API error response raises RutOSAPIError."""

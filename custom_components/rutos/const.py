@@ -8,6 +8,7 @@ DEFAULT_SCAN_INTERVAL = 30
 API_PATH = "/api"
 
 SESSION_REFRESH_MARGIN = 30  # Refresh 30s before expiry
+REQUEST_TIMEOUT = 15  # Seconds per HTTP request, including login
 
 SERVICE_SET_FAILOVER_ORDER = "set_failover_order"
 ATTR_INTERFACES = "interfaces"

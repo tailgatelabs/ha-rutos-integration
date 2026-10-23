@@ -147,6 +147,97 @@ class TestRutOSActiveWANSensor:
         sensor = RutOSActiveWANSensor(mock_coordinator, {})
         assert sensor.native_value is None
 
+    def test_link_up_but_mwan_offline_falls_through(
+        self, mock_coordinator: RutOSDataUpdateCoordinator
+    ):
+        """Issue #43: primary keeps its link but mwan3 has failed over."""
+        mock_coordinator.data.failover_status = {
+            "mob1s1a1": {"status": "offline", "up": True},
+            "mob1s2a1": {"status": "online", "up": True},
+            "wan1": {"status": "standby", "up": True},
+        }
+        labels = {"mob1s1a1": "Starlink", "mob1s2a1": "5G/LTE"}
+        sensor = RutOSActiveWANSensor(mock_coordinator, labels)
+        assert sensor.native_value == "5G/LTE"
+
+    def test_follows_member_metric_not_list_order(
+        self, mock_coordinator: RutOSDataUpdateCoordinator
+    ):
+        """mwan3 member metric sets priority, not use_member list order.
+
+        Mirrors the live router: use_member lists mob1s1a1 first, but
+        wan1_member_mwan has the lowest metric.
+        """
+        metrics = {"wan1": "1", "mob1s1a1": "2", "mob1s2a1": "3", "wan2": "4"}
+        for member in mock_coordinator.data.failover_chain["members"]:
+            member["metric"] = metrics[member["network_id"]]
+        mock_coordinator.data.failover_status = {
+            "mob1s1a1": {"status": "online", "up": True},
+            "wan1": {"status": "online", "up": True},
+        }
+        sensor = RutOSActiveWANSensor(mock_coordinator, {})
+        assert sensor.native_value == "wan1"
+
+    def test_notracking_member_counts_when_link_up(
+        self, mock_coordinator: RutOSDataUpdateCoordinator
+    ):
+        """mwan3 treats untracked interfaces as online while the link is up."""
+        mock_coordinator.data.failover_status = {
+            "mob1s1a1": {"status": "notracking", "up": False},
+            "mob1s2a1": {"status": "notracking", "up": True},
+        }
+        sensor = RutOSActiveWANSensor(mock_coordinator, {})
+        assert sensor.native_value == "mob1s2a1"
+
+    def test_uses_router_label_for_mwan_member(
+        self, mock_coordinator: RutOSDataUpdateCoordinator
+    ):
+        """Without a configured label, fall back to the router's GUI label."""
+        mock_coordinator.data.failover_status = {
+            "wan2": {"status": "online", "up": True},
+        }
+        sensor = RutOSActiveWANSensor(mock_coordinator, {})
+        assert sensor.native_value == "wifi1"
+
+    def test_none_when_no_member_online(
+        self, mock_coordinator: RutOSDataUpdateCoordinator
+    ):
+        """No mwan3 member online means no active WAN, even with links up."""
+        mock_coordinator.data.failover_status = {
+            "mob1s1a1": {"status": "offline", "up": True},
+            "wan1": {"status": "offline", "up": True},
+        }
+        sensor = RutOSActiveWANSensor(mock_coordinator, {})
+        assert sensor.native_value is None
+
+    def test_balance_mode_keeps_list_order(
+        self, mock_coordinator: RutOSDataUpdateCoordinator
+    ):
+        """Equal metrics (load balance) fall back to use_member order."""
+        for member in mock_coordinator.data.failover_chain["members"]:
+            member["metric"] = "1"
+        mock_coordinator.data.failover_status = {
+            "mob1s2a1": {"status": "online", "up": True},
+            "wan1": {"status": "online", "up": True},
+        }
+        sensor = RutOSActiveWANSensor(mock_coordinator, {})
+        assert sensor.native_value == "mob1s2a1"
+
+    def test_falls_back_to_link_state_without_policy(
+        self, mock_coordinator: RutOSDataUpdateCoordinator
+    ):
+        """No resolvable failover policy: use the first link-up interface."""
+        mock_coordinator.data.failover_status = {
+            "wan1": {"status": "online", "up": True},
+        }
+        mock_coordinator.data.failover_chain = {
+            "policy_id": None,
+            "mode": "failover",
+            "members": [],
+        }
+        sensor = RutOSActiveWANSensor(mock_coordinator, {})
+        assert sensor.native_value == "mob1s1a1"
+
     def test_unique_id(self, mock_coordinator: RutOSDataUpdateCoordinator):
         """Test unique_id is {serial}_active_wan."""
         sensor = RutOSActiveWANSensor(mock_coordinator, {})

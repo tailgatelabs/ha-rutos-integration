@@ -1573,3 +1573,54 @@ class TestGetModemStatus:
 
             result = await api_client.get_modem_status()
             assert result == []
+
+
+class TestGetFailoverStatus:
+    """Tests for get_failover_status (mwan3 tracking state)."""
+
+    async def test_returns_status_keyed_by_interface(self, api_client):
+        """Per-interface mwan3 status dicts are returned as-is."""
+        status_data = {
+            "wan1": {"status": "offline", "up": True, "uptime": 36000},
+            "mob1s2a1": {"status": "online", "up": True, "uptime": 1300},
+        }
+        with aioresponses() as m:
+            m.post(_url("/login"), payload=_login_success())
+            m.get(_url("/failover/status"), payload=_success(status_data))
+
+            result = await api_client.get_failover_status()
+
+            assert result == status_data
+
+    async def test_skips_non_dict_entries(self, api_client):
+        """Malformed per-interface entries are dropped."""
+        with aioresponses() as m:
+            m.post(_url("/login"), payload=_login_success())
+            m.get(
+                _url("/failover/status"),
+                payload=_success({"wan1": {"status": "online"}, "bogus": "x"}),
+            )
+
+            result = await api_client.get_failover_status()
+
+            assert result == {"wan1": {"status": "online"}}
+
+    async def test_api_error_returns_empty(self, api_client):
+        """Endpoint failure degrades to an empty dict."""
+        with aioresponses() as m:
+            m.post(_url("/login"), payload=_login_success())
+            m.get(_url("/failover/status"), payload=_error("Unauthorized"))
+
+            result = await api_client.get_failover_status()
+
+            assert result == {}
+
+    async def test_non_dict_returns_empty(self, api_client):
+        """Unexpected payload shape degrades to an empty dict."""
+        with aioresponses() as m:
+            m.post(_url("/login"), payload=_login_success())
+            m.get(_url("/failover/status"), payload=_success([]))
+
+            result = await api_client.get_failover_status()
+
+            assert result == {}

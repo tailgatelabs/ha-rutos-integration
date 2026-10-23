@@ -635,6 +635,24 @@ class RutOSAPI:
         mode = _detect_failover_mode(ordered_members)
         return {"policy_id": policy_id, "mode": mode, "members": ordered_members}
 
+    async def get_failover_status(self) -> dict[str, dict[str, Any]]:
+        """Fetch mwan3 tracking status keyed by network interface id.
+
+        Each value carries mwan3's view of the interface (``status`` is one of
+        ``online``, ``offline``, ``standby``, ``notracking``, ``disabled``) plus
+        the raw link flag ``up``. Unlike ``/interfaces/status``, this reflects
+        whether the interface actually passes traffic, not just link state.
+        Returns ``{}`` when the endpoint is unavailable.
+        """
+        try:
+            data = await self.get("/failover/status")
+        except RutOSAPIError:
+            _LOGGER.debug("/failover/status unavailable")
+            return {}
+        if not isinstance(data, dict):
+            return {}
+        return {k: v for k, v in data.items() if isinstance(v, dict)}
+
     async def _get_all_failover_members(self) -> list[dict[str, Any]]:
         """Fetch all mwan3 member configs (no naming-based filter)."""
         data = await self.get("/failover/members/config")

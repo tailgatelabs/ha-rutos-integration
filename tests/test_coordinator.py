@@ -86,12 +86,14 @@ async def test_async_update_data_returns_rutos_data(
     assert result.modem_signal[0]["id"] == "modem1"
     assert len(result.modems) == 1
     assert result.modems[0]["id"] == "modem1"
+    assert result.failover_status["mob1s1a1"]["status"] == "online"
     mock_api.get_wan_interfaces.assert_awaited_once()
     mock_api.get_internet_status.assert_awaited_once()
     mock_api.get_gps_position.assert_awaited_once()
     mock_api.get_data_limit.assert_awaited_once()
     mock_api.get_modem_signal.assert_awaited_once()
     mock_api.get_modems.assert_awaited_once()
+    mock_api.get_failover_status.assert_awaited_once()
 
 
 async def test_async_update_data_auth_error_raises_update_failed(

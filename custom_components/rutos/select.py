@@ -22,7 +22,7 @@ async def async_setup_entry(
 ) -> None:
     """Set up the failover priority select."""
     groups: dict[str, list[str]] = entry.options.get(CONF_FAILOVER_GROUPS, {})
-    if len(groups) < 2:  # noqa: PLR2004
+    if len(groups) < 2:
         return
     if entry.runtime_data.data.failover_mode == "balance":
         return
@@ -67,7 +67,7 @@ class RutOSFailoverSelect(RutOSEntity, SelectEntity):
     def options(self) -> list[str]:
         """Return all permutations of currently active group labels."""
         active = self._active_groups()
-        if len(active) < 2:  # noqa: PLR2004
+        if len(active) < 2:
             return []
         return [", ".join(perm) for perm in itertools.permutations(active)]
 
@@ -76,7 +76,7 @@ class RutOSFailoverSelect(RutOSEntity, SelectEntity):
         """Return False if balance mode is active or fewer than 2 groups are active."""
         if self.coordinator.data.failover_mode == "balance":
             return False
-        return len(self._active_groups()) >= 2  # noqa: PLR2004
+        return len(self._active_groups()) >= 2
 
     @property
     def current_option(self) -> str | None:

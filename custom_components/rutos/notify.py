@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from homeassistant.components.notify import NotifyEntity, NotifyEntityFeature
+from homeassistant.components.notify import (
+    NotifyEntity,
+    NotifyEntityFeature,  # pyright: ignore[reportPrivateImportUsage]
+)
 from homeassistant.config_entries import ConfigSubentry
 from homeassistant.const import CONF_NAME
 from homeassistant.core import HomeAssistant

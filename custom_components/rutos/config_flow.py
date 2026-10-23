@@ -4,9 +4,14 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-import voluptuous as vol
+if TYPE_CHECKING:
+    # HA 2026.10+ types its schema APIs against probatio and aliases
+    # ``voluptuous`` to it at runtime; older HA still ships real voluptuous.
+    import probatio as vol
+else:
+    import voluptuous as vol
 
 from homeassistant.config_entries import (
     ConfigEntry,
@@ -163,7 +168,7 @@ class RutOSOptionsFlowHandler(OptionsFlow):
 
             if has_invalid_label:
                 errors["base"] = "invalid_label"
-            elif len(groups) < 2:  # noqa: PLR2004
+            elif len(groups) < 2:
                 errors["base"] = "too_few_groups"
             elif len(groups) > MAX_FAILOVER_GROUPS:
                 errors["base"] = "too_many_groups"

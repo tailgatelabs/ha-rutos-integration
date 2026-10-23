@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import time
+from unittest.mock import Mock, patch
+
 import aiohttp
 import pytest
 from aioresponses import CallbackResult, aioresponses
+from aioresponses import core as aioresponses_core
 
 from custom_components.rutos.api import (
     RutOSAPI,
@@ -26,6 +29,27 @@ TEST_BASE_URL = f"https://{TEST_HOST}{API_PATH}"
 TEST_USER = "admin"
 TEST_PASS = "admin01"
 TEST_TOKEN = "test-token-abc123"
+
+
+class _ClientResponse(aiohttp.ClientResponse):
+    """ClientResponse that tolerates aioresponses omitting ``stream_writer``.
+
+    aiohttp 3.14 made ``stream_writer`` a required argument, and aioresponses
+    (0.7.9) does not pass it yet. Drop this once aioresponses ships the fix
+    (pnuckowski/aioresponses#288).
+    """
+
+    def __init__(self, *args, stream_writer=None, **kwargs):
+        if stream_writer is None:
+            stream_writer = Mock(output_size=0)
+        super().__init__(*args, stream_writer=stream_writer, **kwargs)
+
+
+@pytest.fixture(autouse=True)
+def _aioresponses_aiohttp_compat():
+    """Build mocked responses with the aiohttp 3.14-compatible class."""
+    with patch.object(aioresponses_core, "ClientResponse", _ClientResponse):
+        yield
 
 
 @pytest.fixture

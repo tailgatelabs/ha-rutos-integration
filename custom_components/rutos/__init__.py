@@ -3,8 +3,14 @@
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 
-import voluptuous as vol
+if TYPE_CHECKING:
+    # HA 2026.10+ types its schema APIs against probatio and aliases
+    # ``voluptuous`` to it at runtime; older HA still ships real voluptuous.
+    import probatio as vol
+else:
+    import voluptuous as vol
 
 from homeassistant.components.zone import DATA_ZONE_STORAGE_COLLECTION
 from homeassistant.config_entries import ConfigEntry
@@ -132,7 +138,7 @@ async def _async_apply_home_location(
     service_data: dict[str, float | int] = {"latitude": lat, "longitude": lon}
     if altitude is not None:
         # homeassistant.set_location's schema requires elevation to be an int.
-        service_data["elevation"] = int(round(altitude))
+        service_data["elevation"] = round(altitude)
 
     await hass.services.async_call("homeassistant", "set_location", service_data)
 

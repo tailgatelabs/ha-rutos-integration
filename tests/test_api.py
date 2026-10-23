@@ -6,7 +6,7 @@ import asyncio
 import time
 import aiohttp
 import pytest
-from aioresponses import aioresponses
+from aioresponses import CallbackResult, aioresponses
 
 from custom_components.rutos.api import (
     RutOSAPI,
@@ -16,6 +16,7 @@ from custom_components.rutos.api import (
 )
 from custom_components.rutos.const import (
     API_PATH,
+    MAX_CONCURRENT_REQUESTS,
     REQUEST_TIMEOUT,
     SESSION_REFRESH_MARGIN,
 )
@@ -202,6 +203,31 @@ class TestRequest:
 
             with pytest.raises(RutOSConnectionError, match="Timed out"):
                 await api_client.get("/test")
+
+    # aioresponses inspects async callbacks with a deprecated asyncio helper.
+    @pytest.mark.filterwarnings(
+        "ignore:'asyncio.iscoroutinefunction' is deprecated:DeprecationWarning"
+    )
+    async def test_requests_capped_at_max_concurrency(self, api_client):
+        """Test parallel requests never exceed MAX_CONCURRENT_REQUESTS in flight."""
+        in_flight = 0
+        peak = 0
+
+        async def _slow_response(url, **kwargs):
+            nonlocal in_flight, peak
+            in_flight += 1
+            peak = max(peak, in_flight)
+            await asyncio.sleep(0.01)
+            in_flight -= 1
+            return CallbackResult(payload=_success())
+
+        with aioresponses() as m:
+            m.post(_url("/login"), payload=_login_success())
+            m.get(_url("/test"), callback=_slow_response, repeat=True)
+
+            await asyncio.gather(*(api_client.get("/test") for _ in range(12)))
+
+        assert peak == MAX_CONCURRENT_REQUESTS
 
     async def test_request_sets_request_timeout(self, api_client):
         """Test authenticated requests pass an explicit per-request timeout."""

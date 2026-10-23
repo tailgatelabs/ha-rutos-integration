@@ -1310,6 +1310,7 @@ class TestGetModemSignal:
                 "rsrp": -98,
                 "rsrq": -8,
                 "sinr": 10,
+                "signal_quality": 71,
                 "band": "LTE B12",
                 "conntype": "5G (NSA)",
                 "ntype": "5G-NSA",
@@ -1328,6 +1329,7 @@ class TestGetModemSignal:
             assert result[0]["rsrp"] == -98
             assert result[0]["rsrq"] == -8
             assert result[0]["sinr"] == 10
+            assert result[0]["signal_quality"] == 71
             assert result[0]["band"] == "LTE B12"
             # conntype wins over ntype for human-readable network_type
             assert result[0]["network_type"] == "5G (NSA)"

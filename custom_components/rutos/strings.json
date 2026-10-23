@@ -104,6 +104,9 @@
       "modem_sinr": {
         "name": "{modem} SINR"
       },
+      "modem_signal_quality": {
+        "name": "{modem} signal quality"
+      },
       "modem_network_type": {
         "name": "{modem} network type"
       },

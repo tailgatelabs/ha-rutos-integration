@@ -448,7 +448,7 @@ class RutOSAPI:
         """Fetch signal strength data for all modems.
 
         Prefers flat top-level fields from /modems/status (rssi, rsrp, rsrq,
-        sinr, band, conntype). Falls back to /modems/signal/status where
+        sinr, signal_quality, band, conntype). Falls back to /modems/signal/status where
         metrics live in a nested 'signal' array of historical samples.
         """
         try:
@@ -476,6 +476,7 @@ class RutOSAPI:
                         "rsrp": modem.get("rsrp"),
                         "rsrq": modem.get("rsrq"),
                         "sinr": modem.get("sinr"),
+                        "signal_quality": modem.get("signal_quality"),
                         "network_type": modem.get("conntype") or modem.get("ntype"),
                         "band": band,
                         "channel_number": channel,
@@ -508,6 +509,7 @@ class RutOSAPI:
                     "rsrp": src.get("rsrp"),
                     "rsrq": src.get("rsrq"),
                     "sinr": src.get("sinr"),
+                    "signal_quality": src.get("signal_quality"),
                     "network_type": src.get("network_type"),
                     "band": src.get("band"),
                     "channel_number": src.get("channel_number"),

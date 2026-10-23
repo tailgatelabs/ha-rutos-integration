@@ -25,7 +25,7 @@ type _UpdateResult = tuple[
     list[dict[str, Any]],
     list[dict[str, Any]],
     list[dict[str, Any]],
-    list[dict[str, Any]],
+    dict[str, Any],
 ]
 
 
@@ -41,7 +41,19 @@ class RutOSData:
     modem_signal: list[dict[str, Any]] = field(default_factory=list)
     modem_status: list[dict[str, Any]] = field(default_factory=list)
     modems: list[dict[str, Any]] = field(default_factory=list)
-    failover_members: list[dict[str, Any]] = field(default_factory=list)
+    failover_chain: dict[str, Any] = field(
+        default_factory=lambda: {"policy_id": None, "mode": "failover", "members": []}
+    )
+
+    @property
+    def failover_members(self) -> list[dict[str, Any]]:
+        """Return the active policy's failover members in policy order."""
+        return self.failover_chain.get("members", [])
+
+    @property
+    def failover_mode(self) -> str:
+        """Return ``"failover"`` or ``"balance"`` for the active policy."""
+        return self.failover_chain.get("mode", "failover")
 
 
 class RutOSDataUpdateCoordinator(DataUpdateCoordinator[RutOSData]):
@@ -87,7 +99,7 @@ class RutOSDataUpdateCoordinator(DataUpdateCoordinator[RutOSData]):
                     self.api.get_modem_signal(),
                     self.api.get_modem_status(),
                     self.api.get_modems(),
-                    self.api.get_failover_members(),
+                    self.api.get_active_failover_chain(),
                 ),
             )
         except RutOSAuthError as err:
@@ -103,6 +115,6 @@ class RutOSDataUpdateCoordinator(DataUpdateCoordinator[RutOSData]):
             self.data.modem_signal,
             self.data.modem_status,
             self.data.modems,
-            self.data.failover_members,
+            self.data.failover_chain,
         ) = results
         return self.data

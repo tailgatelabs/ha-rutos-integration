@@ -16,6 +16,18 @@ GROUPS = {
 }
 
 
+def _chain(members: list[dict], mode: str = "failover") -> dict:
+    """Build an active-failover-chain dict for tests.
+
+    Defaults each member's ``network_id`` to its ``interface`` value so legacy
+    tests (where the two coincide) don't need to spell it out.
+    """
+    enriched = [
+        {**m, "network_id": m.get("network_id", m.get("interface"))} for m in members
+    ]
+    return {"policy_id": "mwan_default", "mode": mode, "members": enriched}
+
+
 class TestRutOSFailoverSelect:
     """Tests for the failover priority select entity."""
 
@@ -29,43 +41,52 @@ class TestRutOSFailoverSelect:
 
     def test_current_option_cellular_first(self, mock_coordinator):
         """Test current_option when cellular has lowest metric."""
-        mock_coordinator.data.failover_members = [
-            {"interface": "mob1s1a1", "metric": "1"},
-            {"interface": "mob1s2a1", "metric": "2"},
-            {"interface": "wan1", "metric": "3"},
-            {"interface": "wan2", "metric": "4"},
-        ]
+        mock_coordinator.data.failover_chain = _chain(
+            [
+                {"id": "mob1s1a1_member_mwan", "interface": "mob1s1a1", "metric": "1"},
+                {"id": "mob1s2a1_member_mwan", "interface": "mob1s2a1", "metric": "2"},
+                {"id": "wan1_member_mwan", "interface": "wan1", "metric": "3"},
+                {"id": "wan2_member_mwan", "interface": "wan2", "metric": "4"},
+            ]
+        )
         entity = RutOSFailoverSelect(mock_coordinator, GROUPS)
         assert entity.current_option == "Cellular, Starlink, WiFi"
 
     def test_current_option_starlink_first(self, mock_coordinator):
         """Test current_option when starlink has lowest metric."""
-        mock_coordinator.data.failover_members = [
-            {"interface": "wan1", "metric": "1"},
-            {"interface": "mob1s1a1", "metric": "2"},
-            {"interface": "mob1s2a1", "metric": "3"},
-            {"interface": "wan2", "metric": "4"},
-        ]
+        mock_coordinator.data.failover_chain = _chain(
+            [
+                {"id": "wan1_member_mwan", "interface": "wan1", "metric": "1"},
+                {"id": "mob1s1a1_member_mwan", "interface": "mob1s1a1", "metric": "2"},
+                {"id": "mob1s2a1_member_mwan", "interface": "mob1s2a1", "metric": "3"},
+                {"id": "wan2_member_mwan", "interface": "wan2", "metric": "4"},
+            ]
+        )
         entity = RutOSFailoverSelect(mock_coordinator, GROUPS)
         assert entity.current_option == "Starlink, Cellular, WiFi"
 
     def test_current_option_none_when_missing_interface(self, mock_coordinator):
         """Test current_option returns None when interface is missing."""
-        mock_coordinator.data.failover_members = [
-            {"interface": "mob1s1a1", "metric": "1"},
-        ]
+        mock_coordinator.data.failover_chain = _chain(
+            [{"id": "mob1s1a1_member_mwan", "interface": "mob1s1a1", "metric": "1"}]
+        )
         entity = RutOSFailoverSelect(mock_coordinator, GROUPS)
         assert entity.current_option is None
 
     @pytest.mark.asyncio
     async def test_select_option_expands_groups(self, mock_coordinator):
-        """Test that selecting an option expands groups into interface list."""
+        """Test that selecting an option resolves member IDs from the active policy."""
         mock_coordinator.async_request_refresh = AsyncMock()
         entity = RutOSFailoverSelect(mock_coordinator, GROUPS)
         await entity.async_select_option("Starlink, Cellular, WiFi")
 
         mock_coordinator.api.set_failover_order.assert_awaited_once_with(
-            ["wan1", "mob1s1a1", "mob1s2a1", "wan2"]
+            [
+                "wan1_member_mwan",
+                "mob1s1a1_member_mwan",
+                "mob1s2a1_member_mwan",
+                "wan2_member_mwan",
+            ]
         )
         mock_coordinator.async_request_refresh.assert_awaited_once()
 
@@ -105,3 +126,63 @@ class TestRutOSFailoverSelect:
         assert len(entity.options) == 2
         assert "Cellular, Starlink" in entity.options
         assert "Starlink, Cellular" in entity.options
+
+    def test_unavailable_when_mode_flips_to_balance(self, mock_coordinator):
+        """Entity becomes unavailable if the router switches to balance mode at runtime."""
+        entity = RutOSFailoverSelect(mock_coordinator, GROUPS)
+        assert entity.available is True
+
+        mock_coordinator.data.failover_chain = _chain(
+            [
+                {"id": "mob1s1a1_member_balance", "interface": "mob1s1a1",
+                 "metric": "1"},
+                {"id": "wan1_member_balance", "interface": "wan1", "metric": "1"},
+            ],
+            mode="balance",
+        )
+        assert entity.available is False
+
+    @pytest.mark.asyncio
+    async def test_select_option_raises_in_balance_mode(self, mock_coordinator):
+        """async_select_option raises HomeAssistantError if mode is balance."""
+        from homeassistant.exceptions import HomeAssistantError
+
+        entity = RutOSFailoverSelect(mock_coordinator, GROUPS)
+        mock_coordinator.data.failover_chain = _chain(
+            [
+                {"id": "mob1s1a1_member_balance", "interface": "mob1s1a1",
+                 "metric": "1"},
+                {"id": "wan1_member_balance", "interface": "wan1", "metric": "1"},
+            ],
+            mode="balance",
+        )
+
+        with pytest.raises(HomeAssistantError, match="load-balance"):
+            await entity.async_select_option("Cellular, Starlink, WiFi")
+
+        mock_coordinator.api.set_failover_order.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_async_setup_entry_skips_in_balance_mode(hass, mock_coordinator):
+    """Test that no entity is created when the active policy is balance mode."""
+    from custom_components.rutos.const import CONF_FAILOVER_GROUPS
+    from custom_components.rutos.select import async_setup_entry
+
+    mock_coordinator.data.failover_chain = _chain(
+        [
+            {"id": "wan1_member_balance", "interface": "wan1", "metric": "1"},
+            {"id": "mob1s1a1_member_balance", "interface": "mob1s1a1", "metric": "1"},
+        ],
+        mode="balance",
+    )
+
+    entry = AsyncMock()
+    entry.options = {
+        CONF_FAILOVER_GROUPS: {"Cellular": ["mob1s1a1"], "Starlink": ["wan1"]}
+    }
+    entry.runtime_data = mock_coordinator
+    add_entities = AsyncMock()
+
+    await async_setup_entry(hass, entry, add_entities)
+    add_entities.assert_not_called()

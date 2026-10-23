@@ -20,6 +20,24 @@ HACS.
 - **HACS validate:**
   `docker run --rm -v $(pwd):/github/workspace ghcr.io/hacs/action`
 
+## Test Router
+
+A live Teltonika router is reachable for ad-hoc API checks (e.g. comparing raw
+endpoint responses against what the integration expects). Credentials live in
+`.env` (gitignored) as `TELTONIKA_HOST`, `TELTONIKA_USER`, `TELTONIKA_PASSWORD`.
+Read-only account; safe to query freely. Self-signed cert, so use `curl -k`.
+
+To call an endpoint:
+
+```bash
+set -a; . ./.env; set +a
+TOKEN=$(curl -sk -X POST "https://$TELTONIKA_HOST/api/login" \
+  -H "Content-Type: application/json" \
+  -d "{\"username\":\"$TELTONIKA_USER\",\"password\":\"$TELTONIKA_PASSWORD\"}" \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['data']['token'])")
+curl -sk "https://$TELTONIKA_HOST/api/<path>" -H "Authorization: Bearer $TOKEN"
+```
+
 ## Conventions
 
 - All entities inherit from `RutOSEntity` base class (`entity.py`) which

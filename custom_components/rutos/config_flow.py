@@ -144,6 +144,10 @@ class RutOSOptionsFlowHandler(OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Configure failover interface groups."""
+        coordinator = self.config_entry.runtime_data
+        if coordinator.data.failover_mode == "balance":
+            return await self.async_step_failover_balance(user_input)
+
         errors: dict[str, str] = {}
 
         if user_input is not None:
@@ -167,11 +171,16 @@ class RutOSOptionsFlowHandler(OptionsFlow):
                 self._options_data[CONF_FAILOVER_GROUPS] = groups
                 return self.async_create_entry(title="", data=self._options_data)
 
-        # Fetch current failover members, excluding disabled interfaces
-        coordinator = self.config_entry.runtime_data
-        members = await coordinator.api.get_failover_members()
-        active_ifaces = {iface["name"] for iface in coordinator.data.wan_interfaces}
-        members = [m for m in members if m.get("interface", "") in active_ifaces]
+        # Use members from the active failover policy, restricted to interfaces
+        # currently present on the router. Members carry a ``network_id``
+        # resolved through the mwan_interface bridge table; that's the UCI id
+        # which lines up with ``wan_interfaces[i]["name"]``.
+        active_ids = {iface["name"] for iface in coordinator.data.wan_interfaces}
+        members = [
+            m
+            for m in coordinator.data.failover_members
+            if m.get("network_id") in active_ids
+        ]
 
         # Build reverse map: iface_id → existing label
         existing_groups: dict[str, list[str]] = self.config_entry.options.get(
@@ -182,10 +191,11 @@ class RutOSOptionsFlowHandler(OptionsFlow):
             for iface in ifaces:
                 existing_labels[iface] = label
 
-        # Build dynamic schema: one text field per interface
+        # Build dynamic schema: one text field per interface, keyed by the
+        # canonical UCI id (stable across user-driven display name changes).
         schema: dict[vol.Required, type] = {}
         for member in sorted(members, key=lambda m: int(m.get("metric", 0))):
-            iface_id = member.get("interface", member.get("id", ""))
+            iface_id = member["network_id"]
             default = existing_labels.get(iface_id, iface_id)
             if user_input and iface_id in user_input:
                 default = user_input[iface_id]
@@ -195,6 +205,20 @@ class RutOSOptionsFlowHandler(OptionsFlow):
             step_id="failover_groups",
             data_schema=vol.Schema(schema),
             errors=errors,
+        )
+
+    async def async_step_failover_balance(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Handle the case where the active policy is load-balance mode."""
+        if user_input is not None:
+            self._options_data[CONF_FAILOVER_GROUPS] = self.config_entry.options.get(
+                CONF_FAILOVER_GROUPS, {}
+            )
+            return self.async_create_entry(title="", data=self._options_data)
+        return self.async_show_form(
+            step_id="failover_balance",
+            data_schema=vol.Schema({}),
         )
 
 

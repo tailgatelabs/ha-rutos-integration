@@ -72,7 +72,26 @@ def mock_api_instance():
     api.get_gps_position.return_value = None
     api.get_data_limit.return_value = []
     api.get_modem_signal.return_value = []
+    api.get_modem_status.return_value = []
     api.get_modems.return_value = []
+    api.get_active_failover_chain.return_value = {
+        "policy_id": "mwan_default",
+        "mode": "failover",
+        "members": [
+            {
+                "id": "wan_member_mwan",
+                "interface": "wan",
+                "network_id": "wan",
+                "metric": "1",
+            },
+            {
+                "id": "mob1s1a1_member_mwan",
+                "interface": "mob1s1a1",
+                "network_id": "mob1s1a1",
+                "metric": "2",
+            },
+        ],
+    }
     api.set_failover_order.return_value = None
     return api
 
@@ -136,7 +155,7 @@ async def test_set_failover_order_service_registered(
 async def test_set_failover_order_service_call(
     hass: HomeAssistant, mock_api_instance: AsyncMock
 ):
-    """Test service call invokes API and triggers refresh."""
+    """Test service call resolves interfaces to member IDs, invokes API, refreshes."""
     entry = _create_entry(hass)
 
     with patch("custom_components.rutos.RutOSAPI", return_value=mock_api_instance):
@@ -150,7 +169,42 @@ async def test_set_failover_order_service_call(
         blocking=True,
     )
 
-    mock_api_instance.set_failover_order.assert_awaited_once_with(["wan", "mob1s1a1"])
+    # Service translates interface IDs to member IDs from the active policy.
+    mock_api_instance.set_failover_order.assert_awaited_once_with(
+        ["wan_member_mwan", "mob1s1a1_member_mwan"]
+    )
+
+
+async def test_set_failover_order_service_balance_mode_errors(
+    hass: HomeAssistant, mock_api_instance: AsyncMock
+):
+    """Service raises ServiceValidationError when active policy is balance."""
+    from homeassistant.exceptions import ServiceValidationError
+
+    mock_api_instance.get_active_failover_chain.return_value = {
+        "policy_id": "balance_default",
+        "mode": "balance",
+        "members": [
+            {"id": "wan_member_balance", "interface": "wan", "metric": "1"},
+            {"id": "mob1s1a1_member_balance", "interface": "mob1s1a1",
+             "metric": "1"},
+        ],
+    }
+    entry = _create_entry(hass)
+
+    with patch("custom_components.rutos.RutOSAPI", return_value=mock_api_instance):
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    with pytest.raises(ServiceValidationError, match="load-balance"):
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_SET_FAILOVER_ORDER,
+            {ATTR_INTERFACES: ["wan", "mob1s1a1"]},
+            blocking=True,
+        )
+
+    mock_api_instance.set_failover_order.assert_not_awaited()
 
 
 async def test_register_services_idempotent(

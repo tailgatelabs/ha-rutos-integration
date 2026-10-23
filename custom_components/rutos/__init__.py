@@ -18,6 +18,7 @@ from homeassistant.const import (
     Platform,
 )
 from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.util import slugify
 
@@ -179,7 +180,27 @@ def _register_services(hass: HomeAssistant) -> None:
 
         for entry in hass.config_entries.async_entries(DOMAIN):
             coordinator: RutOSDataUpdateCoordinator = entry.runtime_data
-            await coordinator.api.set_failover_order(interfaces)
+            if coordinator.data.failover_mode == "balance":
+                raise ServiceValidationError(
+                    "Cannot set failover order: router's active mwan3 policy "
+                    "is in load-balance mode. Switch to failover mode in the "
+                    "router GUI to use this service."
+                )
+
+            iface_to_member: dict[str, str] = {
+                m["network_id"]: m["id"]
+                for m in coordinator.data.failover_members
+                if m.get("network_id") and m.get("id")
+            }
+            unknown = [i for i in interfaces if i not in iface_to_member]
+            if unknown:
+                raise ServiceValidationError(
+                    f"Cannot set failover order: interface(s) {unknown} are "
+                    "not in the active failover policy."
+                )
+
+            member_ids = [iface_to_member[i] for i in interfaces]
+            await coordinator.api.set_failover_order(member_ids)
             await coordinator.async_request_refresh()
 
     hass.services.async_register(

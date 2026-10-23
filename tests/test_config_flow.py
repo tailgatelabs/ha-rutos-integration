@@ -283,6 +283,49 @@ async def test_options_flow_too_few_groups_error(
     assert result["errors"] == {"base": "too_few_groups"}
 
 
+async def test_options_flow_balance_mode_shows_unavailable_step(
+    hass: HomeAssistant, mock_config_entry, mock_api
+):
+    """When the active policy is balance mode, the failover_balance step is shown."""
+    mock_api.get_active_failover_chain.return_value = {
+        "policy_id": "balance_default",
+        "mode": "balance",
+        "members": [
+            {"id": "wan1_member_balance", "interface": "wan1", "metric": "1"},
+            {"id": "mob1s1a1_member_balance", "interface": "mob1s1a1",
+             "metric": "1"},
+        ],
+    }
+    mock_config_entry.add_to_hass(hass)
+
+    with patch("custom_components.rutos.RutOSAPI", return_value=mock_api):
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        result = await hass.config_entries.options.async_init(
+            mock_config_entry.entry_id
+        )
+        # Step 1: init still shown so the user can update general settings.
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"],
+            user_input={CONF_UPDATE_HOME_LOCATION: True},
+        )
+        # Step 2: failover_balance informational step (no fields).
+        assert result["type"] is FlowResultType.FORM
+        assert result["step_id"] == "failover_balance"
+
+        # Submitting completes the flow without setting any new groups.
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], user_input={}
+        )
+        await hass.async_block_till_done()
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert mock_config_entry.options[CONF_UPDATE_HOME_LOCATION] is True
+    # Existing failover groups (none) are preserved.
+    assert mock_config_entry.options.get(CONF_FAILOVER_GROUPS, {}) == {}
+
+
 # ---------------------------------------------------------------------------
 # Recipient subentry flow tests
 # ---------------------------------------------------------------------------

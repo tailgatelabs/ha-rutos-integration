@@ -238,6 +238,13 @@ MODEM_SIGNAL_SENSORS: tuple[RutOSSensorEntityDescription, ...] = (
         value_fn=lambda m: m.get("sinr"),
     ),
     RutOSSensorEntityDescription(
+        key="signal_quality",
+        translation_key="modem_signal_quality",
+        native_unit_of_measurement="%",
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda m: m.get("signal_quality"),
+    ),
+    RutOSSensorEntityDescription(
         key="network_type",
         translation_key="modem_network_type",
         value_fn=lambda m: m.get("network_type"),

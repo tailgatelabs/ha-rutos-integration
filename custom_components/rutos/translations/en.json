@@ -163,6 +163,12 @@
       "modem_sinr_multi": {
         "name": "{modem} SINR"
       },
+      "modem_signal_quality": {
+        "name": "Signal quality"
+      },
+      "modem_signal_quality_multi": {
+        "name": "{modem} signal quality"
+      },
       "modem_network_type": {
         "name": "Network type"
       },

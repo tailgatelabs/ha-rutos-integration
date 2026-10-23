@@ -26,6 +26,11 @@ def _bands_desc():
     return next(d for d in MODEM_SIGNAL_SENSORS if d.key == "bands")
 
 
+def _signal_desc(key: str):
+    """Locate a modem signal entity description by key."""
+    return next(d for d in MODEM_SIGNAL_SENSORS if d.key == key)
+
+
 def _band_desc():
     """Locate the legacy single-band entity description by key."""
     return next(d for d in MODEM_SIGNAL_SENSORS if d.key == "band")
@@ -363,37 +368,44 @@ class TestRutOSModemSignalSensor:
 
     def test_rssi_value(self, mock_coordinator: RutOSDataUpdateCoordinator):
         """Test RSSI sensor returns signal strength."""
-        desc = MODEM_SIGNAL_SENSORS[0]  # rssi
+        desc = _signal_desc("rssi")
         sensor = RutOSModemSignalSensor(mock_coordinator, desc, "modem1")
         assert sensor.native_value == -65
 
     def test_rsrp_value(self, mock_coordinator: RutOSDataUpdateCoordinator):
         """Test RSRP sensor returns reference signal power."""
-        desc = MODEM_SIGNAL_SENSORS[1]  # rsrp
+        desc = _signal_desc("rsrp")
         sensor = RutOSModemSignalSensor(mock_coordinator, desc, "modem1")
         assert sensor.native_value == -95
 
     def test_rsrq_value(self, mock_coordinator: RutOSDataUpdateCoordinator):
         """Test RSRQ sensor returns reference signal quality."""
-        desc = MODEM_SIGNAL_SENSORS[2]  # rsrq
+        desc = _signal_desc("rsrq")
         sensor = RutOSModemSignalSensor(mock_coordinator, desc, "modem1")
         assert sensor.native_value == -10
 
     def test_sinr_value(self, mock_coordinator: RutOSDataUpdateCoordinator):
         """Test SINR sensor returns signal-to-noise ratio."""
-        desc = MODEM_SIGNAL_SENSORS[3]  # sinr
+        desc = _signal_desc("sinr")
         sensor = RutOSModemSignalSensor(mock_coordinator, desc, "modem1")
         assert sensor.native_value == 12
 
+    def test_signal_quality_value(self, mock_coordinator: RutOSDataUpdateCoordinator):
+        """Test signal quality sensor returns the router's percentage."""
+        desc = _signal_desc("signal_quality")
+        sensor = RutOSModemSignalSensor(mock_coordinator, desc, "modem1")
+        assert sensor.native_value == 71
+        assert sensor.native_unit_of_measurement == "%"
+
     def test_network_type_value(self, mock_coordinator: RutOSDataUpdateCoordinator):
         """Test network type sensor returns LTE/5G etc."""
-        desc = MODEM_SIGNAL_SENSORS[4]  # network_type
+        desc = _signal_desc("network_type")
         sensor = RutOSModemSignalSensor(mock_coordinator, desc, "modem1")
         assert sensor.native_value == "LTE"
 
     def test_band_value(self, mock_coordinator: RutOSDataUpdateCoordinator):
         """Test band sensor returns band identifier."""
-        desc = MODEM_SIGNAL_SENSORS[5]  # band
+        desc = _signal_desc("band")
         sensor = RutOSModemSignalSensor(mock_coordinator, desc, "modem1")
         assert sensor.native_value == "B7"
 
@@ -443,7 +455,7 @@ class TestModemSensorNaming:
         self, mock_coordinator: RutOSDataUpdateCoordinator
     ):
         """Single modem: use base translation key with no placeholder."""
-        desc = MODEM_SIGNAL_SENSORS[0]  # rssi
+        desc = _signal_desc("rssi")
         sensor = RutOSModemSignalSensor(mock_coordinator, desc, "modem1")
         assert sensor.translation_key == "modem_rssi"
         assert not sensor.translation_placeholders

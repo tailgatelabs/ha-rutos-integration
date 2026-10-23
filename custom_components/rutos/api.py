@@ -99,7 +99,7 @@ def _detect_failover_mode(members: list[dict[str, Any]]) -> str:
     default to ``"failover"`` so the integration shows whatever single
     interface exists.
     """
-    if len(members) < 2:  # noqa: PLR2004
+    if len(members) < 2:
         return "failover"
     metrics = {m.get("metric") for m in members}
     return "balance" if len(metrics) == 1 else "failover"

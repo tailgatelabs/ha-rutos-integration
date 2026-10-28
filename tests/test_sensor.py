@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+from unittest.mock import patch
+
 from custom_components.rutos.const import DOMAIN
 from custom_components.rutos.coordinator import RutOSDataUpdateCoordinator
 from custom_components.rutos.sensor import (
@@ -11,6 +14,7 @@ from custom_components.rutos.sensor import (
     MODEM_SIGNAL_SENSORS,
     MODEM_STATUS_SENSORS,
     RutOSActiveWANSensor,
+    RutOSConnectedSinceSensor,
     RutOSDataLimitSensor,
     RutOSGPSSensorEntity,
     RutOSModemSignalSensor,
@@ -18,6 +22,8 @@ from custom_components.rutos.sensor import (
     RutOSSensorEntity,
     _format_bands,
 )
+
+_DT_UTCNOW = "custom_components.rutos.sensor.dt_util.utcnow"
 
 
 def _bands_desc():
@@ -66,11 +72,70 @@ class TestRutOSSensorEntity:
         sensor_mob = RutOSSensorEntity(mock_coordinator, desc, "mob1s1a1")
         assert sensor_mob.native_value == "10.0.0.1"
 
-    def test_uptime_sensor_value(self, mock_coordinator: RutOSDataUpdateCoordinator):
-        """Test uptime sensor returns seconds."""
+    def test_connected_since_is_floored_timestamp(
+        self, mock_coordinator: RutOSDataUpdateCoordinator
+    ):
+        """Issue #51: uptime is reported as a connected-since minute."""
         desc = INTERFACE_SENSORS[3]  # uptime
-        sensor = RutOSSensorEntity(mock_coordinator, desc, "wan1")
-        assert sensor.native_value == 7200
+        sensor = RutOSConnectedSinceSensor(mock_coordinator, desc, "wan1")
+        now = datetime(2026, 10, 28, 12, 0, 45, tzinfo=UTC)
+        with patch(_DT_UTCNOW, return_value=now):
+            assert sensor.native_value == datetime(2026, 10, 28, 10, 0, tzinfo=UTC)
+
+    def test_connected_since_stable_across_polls(
+        self, mock_coordinator: RutOSDataUpdateCoordinator
+    ):
+        """Poll jitter across a minute boundary doesn't change the state."""
+        desc = INTERFACE_SENSORS[3]
+        sensor = RutOSConnectedSinceSensor(mock_coordinator, desc, "wan1")
+        iface = next(
+            i for i in mock_coordinator.data.wan_interfaces if i["name"] == "wan1"
+        )
+        start = datetime(2026, 10, 28, 12, 1, 0, tzinfo=UTC)
+        with patch(_DT_UTCNOW, return_value=start):
+            assert sensor.native_value == datetime(2026, 10, 28, 10, 1, tzinfo=UTC)
+        # 30 s later the router reports 32 s more uptime: the computed connect
+        # time slips back 2 s to 10:00:58, across a minute boundary.
+        iface["uptime"] = 7232
+        with patch(_DT_UTCNOW, return_value=start.replace(second=30)):
+            assert sensor.native_value == datetime(2026, 10, 28, 10, 1, tzinfo=UTC)
+
+    def test_connected_since_moves_on_reconnect(
+        self, mock_coordinator: RutOSDataUpdateCoordinator
+    ):
+        """A reset uptime yields a new connected-since time."""
+        desc = INTERFACE_SENSORS[3]
+        sensor = RutOSConnectedSinceSensor(mock_coordinator, desc, "wan1")
+        iface = next(
+            i for i in mock_coordinator.data.wan_interfaces if i["name"] == "wan1"
+        )
+        now = datetime(2026, 10, 28, 12, 0, 0, tzinfo=UTC)
+        with patch(_DT_UTCNOW, return_value=now):
+            assert sensor.native_value == datetime(2026, 10, 28, 10, 0, tzinfo=UTC)
+            iface["uptime"] = 300
+            assert sensor.native_value == datetime(2026, 10, 28, 11, 55, tzinfo=UTC)
+
+    def test_connected_since_none_when_down_or_zero(
+        self, mock_coordinator: RutOSDataUpdateCoordinator
+    ):
+        """Down interfaces and zero uptime report no timestamp."""
+        desc = INTERFACE_SENSORS[3]
+        sensor = RutOSConnectedSinceSensor(mock_coordinator, desc, "wan1")
+        iface = next(
+            i for i in mock_coordinator.data.wan_interfaces if i["name"] == "wan1"
+        )
+        iface["uptime"] = 0
+        assert sensor.native_value is None
+        iface["uptime"] = 7200
+        iface["status"] = "down"
+        assert sensor.native_value is None
+        missing = RutOSConnectedSinceSensor(mock_coordinator, desc, "nonexistent")
+        assert missing.native_value is None
+
+    def test_protocol_disabled_by_default(self):
+        """Issue #52: static protocol sensor starts disabled."""
+        desc = next(d for d in INTERFACE_SENSORS if d.key == "proto")
+        assert desc.entity_registry_enabled_default is False
 
     def test_unique_id_format(self, mock_coordinator: RutOSDataUpdateCoordinator):
         """Test unique_id follows {serial}_{interface}_{key} pattern."""
@@ -267,13 +332,13 @@ class TestRutOSGPSSensorEntity:
         """Test GPS speed sensor returns speed from GPS data."""
         desc = GPS_SENSORS[2]  # speed
         sensor = RutOSGPSSensorEntity(mock_coordinator, desc)
-        assert sensor.native_value == 65.3
+        assert sensor.native_value == 65
 
     def test_altitude_sensor_value(self, mock_coordinator: RutOSDataUpdateCoordinator):
         """Test GPS altitude sensor returns altitude from GPS data."""
         desc = GPS_SENSORS[3]  # altitude
         sensor = RutOSGPSSensorEntity(mock_coordinator, desc)
-        assert sensor.native_value == 15.2
+        assert sensor.native_value == 20
 
     def test_satellites_sensor_value(
         self, mock_coordinator: RutOSDataUpdateCoordinator
@@ -309,6 +374,44 @@ class TestRutOSGPSSensorEntity:
         desc = GPS_SENSORS[7]  # accuracy
         sensor = RutOSGPSSensorEntity(mock_coordinator, desc)
         assert sensor.native_value == 5
+
+    def test_rounds_router_string_values(
+        self, mock_coordinator: RutOSDataUpdateCoordinator
+    ):
+        """Issue #51: the router sends strings; noise below the step is dropped."""
+        mock_coordinator.data.gps_position.update(
+            {"speed": "1.4", "altitude": "141.7", "accuracy": "0.6"}
+        )
+        values = {
+            d.key: RutOSGPSSensorEntity(mock_coordinator, d).native_value
+            for d in GPS_SENSORS
+        }
+        assert values["gps_speed"] == 1
+        assert values["gps_altitude"] == 140
+        assert values["gps_accuracy"] == 1
+
+    def test_rounding_handles_missing_and_garbage(
+        self, mock_coordinator: RutOSDataUpdateCoordinator
+    ):
+        """Unparseable readings become None rather than raising."""
+        mock_coordinator.data.gps_position.update({"speed": None, "altitude": "n/a"})
+        speed = next(d for d in GPS_SENSORS if d.key == "gps_speed")
+        altitude = next(d for d in GPS_SENSORS if d.key == "gps_altitude")
+        assert RutOSGPSSensorEntity(mock_coordinator, speed).native_value is None
+        assert RutOSGPSSensorEntity(mock_coordinator, altitude).native_value is None
+
+    def test_coordinates_have_no_state_class(self):
+        """Issue #52: no long-term statistics for latitude/longitude."""
+        for key in ("gps_latitude", "gps_longitude"):
+            desc = next(d for d in GPS_SENSORS if d.key == key)
+            assert desc.state_class is None
+
+    def test_noisy_gps_sensors_disabled_by_default(self):
+        """Issue #52: troubleshooting-only GPS sensors start disabled."""
+        disabled = {
+            d.key for d in GPS_SENSORS if d.entity_registry_enabled_default is False
+        }
+        assert disabled == {"gps_satellites", "gps_accuracy", "gps_heading"}
 
     def test_unique_id_format(self, mock_coordinator: RutOSDataUpdateCoordinator):
         """Test unique_id follows {serial}_{key} pattern."""
@@ -388,6 +491,20 @@ class TestRutOSModemSignalSensor:
         desc = _signal_desc("sinr")
         sensor = RutOSModemSignalSensor(mock_coordinator, desc, "modem1")
         assert sensor.native_value == 12
+
+    def test_raw_signal_sensors_disabled_by_default(self):
+        """Issue #52: raw RF metrics start disabled; signal quality stays on."""
+        disabled = {
+            d.key
+            for d in MODEM_SIGNAL_SENSORS
+            if d.entity_registry_enabled_default is False
+        }
+        assert disabled == {"rssi", "rsrp", "rsrq", "sinr"}
+
+    def test_carriers_attribute_not_recorded(self):
+        """Issue #51: per-carrier metrics stay out of the recorder."""
+        assert "carriers" in RutOSModemSignalSensor._unrecorded_attributes
+        assert "primary_band" not in RutOSModemSignalSensor._unrecorded_attributes
 
     def test_signal_quality_value(self, mock_coordinator: RutOSDataUpdateCoordinator):
         """Test signal quality sensor returns the router's percentage."""

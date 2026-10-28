@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, call, patch
 
-from homeassistant.components.zone import DATA_ZONE_STORAGE_COLLECTION
+import pytest
+
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 
 from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_USERNAME
 
+from custom_components.rutos import ZONE_DATA_KEY
 from custom_components.rutos.const import (
     CONF_UPDATE_HOME_LOCATION,
     DOMAIN,
@@ -85,9 +88,17 @@ def _mock_api(gps_position=None):
     return api
 
 
-def _install_home_zone_storage(hass: HomeAssistant, name: str = "Home") -> MagicMock:
-    """Install a mock zone storage collection that contains a home-zone entry."""
-    storage_collection = MagicMock()
+def _install_home_zone_storage(
+    hass: HomeAssistant, name: str = "Home", *, wrapped: bool = False
+) -> MagicMock:
+    """Install a mock zone storage collection that contains a home-zone entry.
+
+    ``wrapped`` mimics HA 2026.11+, where hass.data["zone"] is a ZoneData object
+    exposing the collection as ``storage_collection`` instead of the collection.
+    """
+    # spec keeps MagicMock from auto-creating a ``storage_collection`` attribute,
+    # which would make the bare collection look like a ZoneData wrapper.
+    storage_collection = MagicMock(spec=["data", "async_update_item"])
     storage_collection.data = {
         "home": {
             "name": name,
@@ -99,7 +110,11 @@ def _install_home_zone_storage(hass: HomeAssistant, name: str = "Home") -> Magic
         }
     }
     storage_collection.async_update_item = AsyncMock()
-    hass.data[DATA_ZONE_STORAGE_COLLECTION] = storage_collection
+    hass.data[ZONE_DATA_KEY] = (
+        SimpleNamespace(storage_collection=storage_collection)
+        if wrapped
+        else storage_collection
+    )
     return storage_collection
 
 
@@ -217,11 +232,14 @@ async def test_gps_missing_lat_lon_no_update(hass: HomeAssistant):
         assert len(location_calls) == 0
 
 
-async def test_editable_home_zone_updates_stored_zone(hass: HomeAssistant):
+@pytest.mark.parametrize("wrapped", [False, True], ids=["pre_2026_11", "zone_data"])
+async def test_editable_home_zone_updates_stored_zone(
+    hass: HomeAssistant, wrapped: bool
+):
     """A user-customized zone.home must be updated via the zone storage collection."""
     entry = _create_entry(hass)
     api = _mock_api(gps_position=MOCK_GPS_POSITION)
-    storage_collection = _install_home_zone_storage(hass)
+    storage_collection = _install_home_zone_storage(hass, wrapped=wrapped)
 
     with (
         patch("custom_components.rutos.RutOSAPI", return_value=api),
@@ -309,7 +327,7 @@ async def test_editable_home_zone_without_storage_collection(hass: HomeAssistant
     """If the zone storage collection is missing, set_location still fires."""
     entry = _create_entry(hass)
     api = _mock_api(gps_position=MOCK_GPS_POSITION)
-    hass.data.pop(DATA_ZONE_STORAGE_COLLECTION, None)
+    hass.data.pop(ZONE_DATA_KEY, None)
 
     with (
         patch("custom_components.rutos.RutOSAPI", return_value=api),

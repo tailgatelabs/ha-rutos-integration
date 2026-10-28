@@ -12,7 +12,6 @@ if TYPE_CHECKING:
 else:
     import voluptuous as vol
 
-from homeassistant.components.zone import DATA_ZONE_STORAGE_COLLECTION
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
     CONF_HOST,
@@ -38,6 +37,10 @@ from .const import (
 from .coordinator import RutOSDataUpdateCoordinator
 
 _LOGGER = logging.getLogger(__name__)
+
+# hass.data key owned by the zone integration. Internal to HA, so referenced by
+# its string value rather than an imported constant (removed in HA 2026.11).
+ZONE_DATA_KEY = "zone"
 
 PLATFORMS: list[Platform] = [
     Platform.SENSOR,
@@ -161,7 +164,10 @@ async def _async_update_stored_home_zone(
 ) -> None:
     """Update the stored zone.home entry via the zone storage collection."""
     try:
-        storage_collection = hass.data.get(DATA_ZONE_STORAGE_COLLECTION)
+        zone_data = hass.data.get(ZONE_DATA_KEY)
+        # HA 2026.11+ wraps the collection in a ZoneData runtime object; older
+        # releases store the ZoneStorageCollection directly under the key.
+        storage_collection = getattr(zone_data, "storage_collection", zone_data)
         if storage_collection is None:
             return
         for item_id, item in storage_collection.data.items():

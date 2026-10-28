@@ -1,8 +1,8 @@
 pytest>=9.0
 pytest-asyncio>=1.4
-# Pinned: this harness pins homeassistant, so float it deliberately. 0.13.373
-# pulls in homeassistant 2026.10.2 / aiohttp 3.14; tests/test_api.py shims
+# Pinned: this harness pins homeassistant, so float it deliberately. 0.13.375
+# pulls in homeassistant 2026.10.4 / aiohttp 3.14; tests/test_api.py shims
 # aioresponses until it supports aiohttp 3.14's required stream_writer arg.
-pytest-homeassistant-custom-component==0.13.373
+pytest-homeassistant-custom-component==0.13.375
 pytest-cov>=7.1
 aioresponses>=0.7.9

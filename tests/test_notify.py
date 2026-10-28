@@ -7,9 +7,6 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from homeassistant.config_entries import ConfigSubentry
-from homeassistant.exceptions import HomeAssistantError
-
 from custom_components.rutos.api import RutOSAPIError
 from custom_components.rutos.const import (
     CONF_MODEM,
@@ -18,6 +15,8 @@ from custom_components.rutos.const import (
 )
 from custom_components.rutos.coordinator import RutOSDataUpdateCoordinator
 from custom_components.rutos.notify import RutosSmsNotifyEntity
+from homeassistant.config_entries import ConfigSubentry
+from homeassistant.exceptions import HomeAssistantError
 
 
 def _make_subentry(

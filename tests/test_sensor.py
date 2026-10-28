@@ -2,18 +2,17 @@
 
 from __future__ import annotations
 
-
 from custom_components.rutos.const import DOMAIN
 from custom_components.rutos.coordinator import RutOSDataUpdateCoordinator
 from custom_components.rutos.sensor import (
-    GPS_SENSORS,
     DATA_LIMIT_SENSORS,
+    GPS_SENSORS,
     INTERFACE_SENSORS,
     MODEM_SIGNAL_SENSORS,
     MODEM_STATUS_SENSORS,
     RutOSActiveWANSensor,
-    RutOSGPSSensorEntity,
     RutOSDataLimitSensor,
+    RutOSGPSSensorEntity,
     RutOSModemSignalSensor,
     RutOSModemStatusSensor,
     RutOSSensorEntity,

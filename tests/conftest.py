@@ -5,16 +5,13 @@ from __future__ import annotations
 from unittest.mock import AsyncMock
 
 import pytest
-
-from homeassistant.core import HomeAssistant
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.rutos.api import RutOSAPI
-from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_USERNAME
-
 from custom_components.rutos.const import DOMAIN
 from custom_components.rutos.coordinator import RutOSData, RutOSDataUpdateCoordinator
-
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_USERNAME
+from homeassistant.core import HomeAssistant
 
 
 @pytest.fixture(autouse=True)

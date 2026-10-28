@@ -40,7 +40,9 @@ class TestRutOSInterfaceSwitch:
 
         await switch.async_turn_on()
 
-        mock_coordinator.api.set_interface_enabled.assert_awaited_once_with("wan1", True)
+        mock_coordinator.api.set_interface_enabled.assert_awaited_once_with(
+            "wan1", True
+        )
         mock_coordinator.async_request_refresh.assert_awaited_once()
 
     async def test_turn_off_calls_api(

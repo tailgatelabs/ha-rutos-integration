@@ -2,20 +2,18 @@
 
 from __future__ import annotations
 
-from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, call, patch
-
-import pytest
+from unittest.mock import AsyncMock, call, patch
 
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import issue_registry as ir
 
 from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_USERNAME
 
-from custom_components.rutos import ZONE_DATA_KEY
 from custom_components.rutos.const import (
     CONF_UPDATE_HOME_LOCATION,
     DOMAIN,
+    ISSUE_HOME_ZONE_OVERRIDDEN,
 )
 from custom_components.rutos.coordinator import RutOSDataUpdateCoordinator
 
@@ -86,36 +84,6 @@ def _mock_api(gps_position=None):
     api.get_modems.return_value = []
     api.set_failover_order.return_value = None
     return api
-
-
-def _install_home_zone_storage(
-    hass: HomeAssistant, name: str = "Home", *, wrapped: bool = False
-) -> MagicMock:
-    """Install a mock zone storage collection that contains a home-zone entry.
-
-    ``wrapped`` mimics HA 2026.11+, where hass.data["zone"] is a ZoneData object
-    exposing the collection as ``storage_collection`` instead of the collection.
-    """
-    # spec keeps MagicMock from auto-creating a ``storage_collection`` attribute,
-    # which would make the bare collection look like a ZoneData wrapper.
-    storage_collection = MagicMock(spec=["data", "async_update_item"])
-    storage_collection.data = {
-        "home": {
-            "name": name,
-            "latitude": 0.0,
-            "longitude": 0.0,
-            "radius": 150,
-            "passive": False,
-            "icon": "mdi:home",
-        }
-    }
-    storage_collection.async_update_item = AsyncMock()
-    hass.data[ZONE_DATA_KEY] = (
-        SimpleNamespace(storage_collection=storage_collection)
-        if wrapped
-        else storage_collection
-    )
-    return storage_collection
 
 
 def _set_location_calls(mock_call: AsyncMock) -> list:
@@ -232,14 +200,35 @@ async def test_gps_missing_lat_lon_no_update(hass: HomeAssistant):
         assert len(location_calls) == 0
 
 
-@pytest.mark.parametrize("wrapped", [False, True], ids=["pre_2026_11", "zone_data"])
-async def test_editable_home_zone_updates_stored_zone(
-    hass: HomeAssistant, wrapped: bool
+def _set_home_zone(hass: HomeAssistant, lat: float, lon: float) -> None:
+    """Set a zone.home state at the given coordinates."""
+    hass.states.async_set(
+        "zone.home",
+        "0",
+        {"latitude": lat, "longitude": lon, "radius": 150, "friendly_name": "Home"},
+    )
+
+
+async def _setup_and_refresh(
+    hass: HomeAssistant, entry: MockConfigEntry, home_zone: tuple[float, float]
+) -> None:
+    """Set up the entry, place zone.home, and run one coordinator update."""
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    _set_home_zone(hass, *home_zone)
+
+    coordinator: RutOSDataUpdateCoordinator = entry.runtime_data
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+
+
+async def test_overridden_home_zone_raises_repair(
+    hass: HomeAssistant, issue_registry: ir.IssueRegistry
 ):
-    """A user-customized zone.home must be updated via the zone storage collection."""
+    """A zone.home that does not follow hass.config raises a repair issue."""
     entry = _create_entry(hass)
     api = _mock_api(gps_position=MOCK_GPS_POSITION)
-    storage_collection = _install_home_zone_storage(hass, wrapped=wrapped)
 
     with (
         patch("custom_components.rutos.RutOSAPI", return_value=api),
@@ -248,26 +237,9 @@ async def test_editable_home_zone_updates_stored_zone(
             new_callable=AsyncMock,
         ) as mock_call,
     ):
-        await hass.config_entries.async_setup(entry.entry_id)
-        await hass.async_block_till_done()
+        await _setup_and_refresh(hass, entry, (40.7128, -74.0060))
 
-        hass.states.async_set(
-            "zone.home",
-            "0",
-            {
-                "latitude": 40.7128,
-                "longitude": -74.0060,
-                "radius": 150,
-                "editable": True,
-                "friendly_name": "Home",
-            },
-        )
-
-        coordinator: RutOSDataUpdateCoordinator = entry.runtime_data
-        await coordinator.async_refresh()
-        await hass.async_block_till_done()
-
-        # hass.config is still updated via the set_location service call.
+        # set_location is still the only thing used to move Home.
         mock_call.assert_any_call(
             "homeassistant",
             "set_location",
@@ -278,86 +250,105 @@ async def test_editable_home_zone_updates_stored_zone(
             },
         )
 
-        # And the stored zone was updated directly so the editable zone.home moves.
-        storage_collection.async_update_item.assert_awaited_once_with(
-            "home",
-            {"latitude": 37.7749, "longitude": -122.4194},
-        )
+        issue = issue_registry.async_get_issue(DOMAIN, ISSUE_HOME_ZONE_OVERRIDDEN)
+        assert issue is not None
+        assert issue.severity is ir.IssueSeverity.WARNING
+        assert not issue.is_fixable
 
 
-async def test_non_editable_home_zone_skips_storage_update(hass: HomeAssistant):
-    """A non-editable zone.home must not touch the zone storage collection."""
+async def test_builtin_home_zone_no_repair(
+    hass: HomeAssistant, issue_registry: ir.IssueRegistry
+):
+    """A zone.home that follows hass.config does not raise a repair issue."""
     entry = _create_entry(hass)
     api = _mock_api(gps_position=MOCK_GPS_POSITION)
-    storage_collection = _install_home_zone_storage(hass)
 
     with (
         patch("custom_components.rutos.RutOSAPI", return_value=api),
         patch(
             "homeassistant.core.ServiceRegistry.async_call",
             new_callable=AsyncMock,
-        ) as mock_call,
+        ),
     ):
-        await hass.config_entries.async_setup(entry.entry_id)
-        await hass.async_block_till_done()
-
-        hass.states.async_set(
-            "zone.home",
-            "0",
-            {"latitude": 0.0, "longitude": 0.0, "editable": False},
+        await _setup_and_refresh(
+            hass, entry, (hass.config.latitude, hass.config.longitude)
         )
 
-        coordinator: RutOSDataUpdateCoordinator = entry.runtime_data
-        await coordinator.async_refresh()
-        await hass.async_block_till_done()
-
-        mock_call.assert_any_call(
-            "homeassistant",
-            "set_location",
-            {
-                "latitude": 37.7749,
-                "longitude": -122.4194,
-                "elevation": 15,
-            },
+        assert (
+            issue_registry.async_get_issue(DOMAIN, ISSUE_HOME_ZONE_OVERRIDDEN) is None
         )
-        storage_collection.async_update_item.assert_not_called()
 
 
-async def test_editable_home_zone_without_storage_collection(hass: HomeAssistant):
-    """If the zone storage collection is missing, set_location still fires."""
+async def test_repair_cleared_when_override_removed(
+    hass: HomeAssistant, issue_registry: ir.IssueRegistry
+):
+    """The repair issue clears once zone.home follows hass.config again."""
     entry = _create_entry(hass)
     api = _mock_api(gps_position=MOCK_GPS_POSITION)
-    hass.data.pop(ZONE_DATA_KEY, None)
 
     with (
         patch("custom_components.rutos.RutOSAPI", return_value=api),
         patch(
             "homeassistant.core.ServiceRegistry.async_call",
             new_callable=AsyncMock,
-        ) as mock_call,
+        ),
     ):
-        await hass.config_entries.async_setup(entry.entry_id)
-        await hass.async_block_till_done()
+        await _setup_and_refresh(hass, entry, (40.7128, -74.0060))
+        assert issue_registry.async_get_issue(DOMAIN, ISSUE_HOME_ZONE_OVERRIDDEN)
 
-        hass.states.async_set(
-            "zone.home",
-            "0",
-            {"latitude": 0.0, "longitude": 0.0, "editable": True},
-        )
-
+        _set_home_zone(hass, hass.config.latitude, hass.config.longitude)
         coordinator: RutOSDataUpdateCoordinator = entry.runtime_data
         await coordinator.async_refresh()
         await hass.async_block_till_done()
 
-        # hass.config is still updated even though storage collection is missing.
-        mock_call.assert_any_call(
-            "homeassistant",
-            "set_location",
-            {
-                "latitude": 37.7749,
-                "longitude": -122.4194,
-                "elevation": 15,
-            },
+        assert (
+            issue_registry.async_get_issue(DOMAIN, ISSUE_HOME_ZONE_OVERRIDDEN) is None
+        )
+
+
+async def test_repair_cleared_on_unload(
+    hass: HomeAssistant, issue_registry: ir.IssueRegistry
+):
+    """Unloading the last entry removes the repair issue."""
+    entry = _create_entry(hass)
+    api = _mock_api(gps_position=MOCK_GPS_POSITION)
+
+    with (
+        patch("custom_components.rutos.RutOSAPI", return_value=api),
+        patch(
+            "homeassistant.core.ServiceRegistry.async_call",
+            new_callable=AsyncMock,
+        ),
+    ):
+        await _setup_and_refresh(hass, entry, (40.7128, -74.0060))
+        assert issue_registry.async_get_issue(DOMAIN, ISSUE_HOME_ZONE_OVERRIDDEN)
+
+        await hass.config_entries.async_unload(entry.entry_id)
+        await hass.async_block_till_done()
+
+        assert (
+            issue_registry.async_get_issue(DOMAIN, ISSUE_HOME_ZONE_OVERRIDDEN) is None
+        )
+
+
+async def test_option_off_no_repair(
+    hass: HomeAssistant, issue_registry: ir.IssueRegistry
+):
+    """No repair issue is raised when home location updates are off."""
+    entry = _create_entry(hass, options={CONF_UPDATE_HOME_LOCATION: False})
+    api = _mock_api(gps_position=MOCK_GPS_POSITION)
+
+    with (
+        patch("custom_components.rutos.RutOSAPI", return_value=api),
+        patch(
+            "homeassistant.core.ServiceRegistry.async_call",
+            new_callable=AsyncMock,
+        ),
+    ):
+        await _setup_and_refresh(hass, entry, (40.7128, -74.0060))
+
+        assert (
+            issue_registry.async_get_issue(DOMAIN, ISSUE_HOME_ZONE_OVERRIDDEN) is None
         )
 
 

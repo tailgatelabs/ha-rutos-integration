@@ -16,6 +16,7 @@ SERVICE_SET_FAILOVER_ORDER = "set_failover_order"
 ATTR_INTERFACES = "interfaces"
 
 CONF_UPDATE_HOME_LOCATION = "update_home_location"
+ISSUE_HOME_ZONE_OVERRIDDEN = "home_zone_overridden"
 CONF_FAILOVER_GROUPS = "failover_groups"
 
 SUBENTRY_TYPE_RECIPIENT = "recipient"

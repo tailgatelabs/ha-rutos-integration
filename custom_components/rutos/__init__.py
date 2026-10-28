@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import math
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -14,33 +15,31 @@ else:
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
+    ATTR_LATITUDE,
+    ATTR_LONGITUDE,
     CONF_HOST,
-    CONF_LATITUDE,
-    CONF_LONGITUDE,
-    CONF_NAME,
     CONF_PASSWORD,
     CONF_USERNAME,
     Platform,
 )
-from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.core import HomeAssistant, ServiceCall, callback
 from homeassistant.exceptions import ServiceValidationError
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
-from homeassistant.util import slugify
 
 from .api import RutOSAPI
 from .const import (
     ATTR_INTERFACES,
     CONF_UPDATE_HOME_LOCATION,
     DOMAIN,
+    ISSUE_HOME_ZONE_OVERRIDDEN,
     SERVICE_SET_FAILOVER_ORDER,
 )
 from .coordinator import RutOSDataUpdateCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
-# hass.data key owned by the zone integration. Internal to HA, so referenced by
-# its string value rather than an imported constant (removed in HA 2026.11).
-ZONE_DATA_KEY = "zone"
+HOME_ZONE_ENTITY_ID = "zone.home"
 
 PLATFORMS: list[Platform] = [
     Platform.SENSOR,
@@ -87,9 +86,11 @@ async def async_unload_entry(hass: HomeAssistant, entry: RutOSConfigEntry) -> bo
     """Unload a config entry."""
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
-    # Remove services when last config entry is unloaded
+    # Remove services and the home-zone repair when last config entry is
+    # unloaded; a remaining entry re-raises the repair on its next update.
     if unload_ok and not hass.config_entries.async_loaded_entries(DOMAIN):
         hass.services.async_remove(DOMAIN, SERVICE_SET_FAILOVER_ORDER)
+        ir.async_delete_issue(hass, DOMAIN, ISSUE_HOME_ZONE_OVERRIDDEN)
 
     return unload_ok
 
@@ -137,7 +138,11 @@ async def _async_apply_home_location(
     lon: float,
     altitude: float | None,
 ) -> None:
-    """Push GPS coordinates to hass.config and, if needed, the stored zone.home."""
+    """Push GPS coordinates to hass.config via homeassistant.set_location."""
+    # Check before moving Home: by now the built-in zone.home has caught up
+    # with the previous set_location, so a mismatch means it is an override.
+    _async_check_home_zone_override(hass)
+
     service_data: dict[str, float | int] = {"latitude": lat, "longitude": lon}
     if altitude is not None:
         # homeassistant.set_location's schema requires elevation to be an int.
@@ -145,40 +150,40 @@ async def _async_apply_home_location(
 
     await hass.services.async_call("homeassistant", "set_location", service_data)
 
-    home_state = hass.states.get("zone.home")
-    if home_state is None or not home_state.attributes.get("editable"):
+
+@callback
+def _async_check_home_zone_override(hass: HomeAssistant) -> None:
+    """Raise a repair issue if zone.home does not follow the core location.
+
+    The built-in zone.home tracks hass.config. A stored or YAML zone named
+    "Home" replaces it and is not moved by set_location, so the user has to
+    remove that override for Home to follow the router.
+    """
+    home_state = hass.states.get(HOME_ZONE_ENTITY_ID)
+    if home_state is None:
         return
 
-    # A user-customized zone.home is stored in .storage/core.zones with
-    # editable=True. For stored zones HA skips wiring its
-    # core_config_updated listener, so the set_location call above updates
-    # hass.config but never moves the zone.home entity. Update the stored
-    # zone directly through the zone storage collection — this preserves the
-    # user's radius, icon, and passive settings while refreshing the
-    # coordinates.
-    await _async_update_stored_home_zone(hass, lat, lon)
+    zone_lat = home_state.attributes.get(ATTR_LATITUDE)
+    zone_lon = home_state.attributes.get(ATTR_LONGITUDE)
+    follows_core_config = (
+        zone_lat is not None
+        and zone_lon is not None
+        and math.isclose(zone_lat, hass.config.latitude, abs_tol=1e-6)
+        and math.isclose(zone_lon, hass.config.longitude, abs_tol=1e-6)
+    )
 
+    if follows_core_config:
+        ir.async_delete_issue(hass, DOMAIN, ISSUE_HOME_ZONE_OVERRIDDEN)
+        return
 
-async def _async_update_stored_home_zone(
-    hass: HomeAssistant, lat: float, lon: float
-) -> None:
-    """Update the stored zone.home entry via the zone storage collection."""
-    try:
-        zone_data = hass.data.get(ZONE_DATA_KEY)
-        # HA 2026.11+ wraps the collection in a ZoneData runtime object; older
-        # releases store the ZoneStorageCollection directly under the key.
-        storage_collection = getattr(zone_data, "storage_collection", zone_data)
-        if storage_collection is None:
-            return
-        for item_id, item in storage_collection.data.items():
-            if slugify(item.get(CONF_NAME, "")) == "home":
-                await storage_collection.async_update_item(
-                    item_id,
-                    {CONF_LATITUDE: lat, CONF_LONGITUDE: lon},
-                )
-                return
-    except Exception as err:  # noqa: BLE001 - defensive against HA internal API churn
-        _LOGGER.warning("Could not update stored zone.home from GPS: %s", err)
+    ir.async_create_issue(
+        hass,
+        DOMAIN,
+        ISSUE_HOME_ZONE_OVERRIDDEN,
+        is_fixable=False,
+        severity=ir.IssueSeverity.WARNING,
+        translation_key=ISSUE_HOME_ZONE_OVERRIDDEN,
+    )
 
 
 def _register_services(hass: HomeAssistant) -> None:

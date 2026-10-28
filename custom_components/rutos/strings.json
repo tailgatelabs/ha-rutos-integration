@@ -152,5 +152,11 @@
         "name": "Failover priority"
       }
     }
+  },
+  "issues": {
+    "home_zone_overridden": {
+      "title": "Home zone does not follow the router's GPS",
+      "description": "\"Update Home Assistant home location from GPS\" is turned on, so the RutOS integration moves the Home Assistant location to the router's GPS position. Your Home zone (`zone.home`) has been replaced by a custom zone, created in the UI or in YAML, and that zone does not follow the Home Assistant location.\n\nFor Home to move with the router, delete the custom Home zone under **Settings > Areas, labels & zones > Zones**, or remove it from your YAML configuration. You can set the Home radius under **Settings > System > General**.\n\nIf you want to keep the custom Home zone, turn off \"Update Home Assistant home location from GPS\" in the RutOS integration options."
+    }
   }
 }

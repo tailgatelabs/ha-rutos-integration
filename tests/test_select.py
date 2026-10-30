@@ -8,7 +8,6 @@ import pytest
 
 from custom_components.rutos.select import RutOSFailoverSelect
 
-
 GROUPS = {
     "Cellular": ["mob1s1a1", "mob1s2a1"],
     "Starlink": ["wan1"],
@@ -134,8 +133,11 @@ class TestRutOSFailoverSelect:
 
         mock_coordinator.data.failover_chain = _chain(
             [
-                {"id": "mob1s1a1_member_balance", "interface": "mob1s1a1",
-                 "metric": "1"},
+                {
+                    "id": "mob1s1a1_member_balance",
+                    "interface": "mob1s1a1",
+                    "metric": "1",
+                },
                 {"id": "wan1_member_balance", "interface": "wan1", "metric": "1"},
             ],
             mode="balance",
@@ -150,8 +152,11 @@ class TestRutOSFailoverSelect:
         entity = RutOSFailoverSelect(mock_coordinator, GROUPS)
         mock_coordinator.data.failover_chain = _chain(
             [
-                {"id": "mob1s1a1_member_balance", "interface": "mob1s1a1",
-                 "metric": "1"},
+                {
+                    "id": "mob1s1a1_member_balance",
+                    "interface": "mob1s1a1",
+                    "metric": "1",
+                },
                 {"id": "wan1_member_balance", "interface": "wan1", "metric": "1"},
             ],
             mode="balance",

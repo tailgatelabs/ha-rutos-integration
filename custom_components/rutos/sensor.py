@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 import re
 from typing import Any
 
@@ -15,6 +16,7 @@ from homeassistant.components.sensor import (
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.util import dt as dt_util
 
 from . import RutOSConfigEntry
 from .const import CONF_FAILOVER_GROUPS
@@ -28,6 +30,24 @@ class RutOSSensorEntityDescription(SensorEntityDescription):
 
     value_fn: Callable[[dict[str, Any]], str | int | float | None]
     attributes_fn: Callable[[dict[str, Any]], dict[str, Any]] | None = None
+
+
+# Connected-since values computed from successive polls differ by a second or
+# two of jitter (and up to a minute once floored). Only treat the interface as
+# reconnected when the new value moves by more than this.
+_CONNECTED_SINCE_TOLERANCE = timedelta(minutes=2)
+
+
+def _round_to(value: Any, step: int) -> int | None:
+    """Round a numeric (or numeric-string) API value to the nearest ``step``.
+
+    Used on GPS readings so a parked vehicle doesn't record sensor noise as a
+    new state on every poll.
+    """
+    try:
+        return round(float(value) / step) * step
+    except (TypeError, ValueError):
+        return None
 
 
 _BAND_RE = re.compile(r"(?P<rat>LTE|5G)\s*[BN]?(?P<num>\d+)", re.IGNORECASE)
@@ -104,12 +124,15 @@ INTERFACE_SENSORS: tuple[RutOSSensorEntityDescription, ...] = (
     RutOSSensorEntityDescription(
         key="proto",
         translation_key="wan_protocol",
+        entity_registry_enabled_default=False,
         value_fn=lambda iface: iface.get("proto"),
     ),
     RutOSSensorEntityDescription(
         key="uptime",
         translation_key="wan_uptime",
-        native_unit_of_measurement="s",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        # Seconds since connect; RutOSConnectedSinceSensor turns it into a
+        # timestamp that only changes on reconnect.
         value_fn=lambda iface: iface.get("uptime"),
     ),
 )
@@ -120,14 +143,12 @@ GPS_SENSORS: tuple[RutOSSensorEntityDescription, ...] = (
         key="gps_latitude",
         translation_key="gps_latitude",
         native_unit_of_measurement="°",
-        state_class=SensorStateClass.MEASUREMENT,
         value_fn=lambda gps: gps.get("latitude"),
     ),
     RutOSSensorEntityDescription(
         key="gps_longitude",
         translation_key="gps_longitude",
         native_unit_of_measurement="°",
-        state_class=SensorStateClass.MEASUREMENT,
         value_fn=lambda gps: gps.get("longitude"),
     ),
     RutOSSensorEntityDescription(
@@ -136,7 +157,7 @@ GPS_SENSORS: tuple[RutOSSensorEntityDescription, ...] = (
         native_unit_of_measurement="km/h",
         device_class=SensorDeviceClass.SPEED,
         state_class=SensorStateClass.MEASUREMENT,
-        value_fn=lambda gps: gps.get("speed"),
+        value_fn=lambda gps: _round_to(gps.get("speed"), 1),
     ),
     RutOSSensorEntityDescription(
         key="gps_altitude",
@@ -144,17 +165,19 @@ GPS_SENSORS: tuple[RutOSSensorEntityDescription, ...] = (
         native_unit_of_measurement="m",
         device_class=SensorDeviceClass.DISTANCE,
         state_class=SensorStateClass.MEASUREMENT,
-        value_fn=lambda gps: gps.get("altitude"),
+        value_fn=lambda gps: _round_to(gps.get("altitude"), 10),
     ),
     RutOSSensorEntityDescription(
         key="gps_satellites",
         translation_key="gps_satellites",
+        entity_registry_enabled_default=False,
         state_class=SensorStateClass.MEASUREMENT,
         value_fn=lambda gps: gps.get("satellites"),
     ),
     RutOSSensorEntityDescription(
         key="gps_heading",
         translation_key="gps_heading",
+        entity_registry_enabled_default=False,
         native_unit_of_measurement="°",
         value_fn=lambda gps: gps.get("angle"),
     ),
@@ -169,7 +192,8 @@ GPS_SENSORS: tuple[RutOSSensorEntityDescription, ...] = (
         native_unit_of_measurement="m",
         device_class=SensorDeviceClass.DISTANCE,
         state_class=SensorStateClass.MEASUREMENT,
-        value_fn=lambda gps: gps.get("accuracy"),
+        entity_registry_enabled_default=False,
+        value_fn=lambda gps: _round_to(gps.get("accuracy"), 1),
     ),
 )
 
@@ -210,6 +234,7 @@ MODEM_SIGNAL_SENSORS: tuple[RutOSSensorEntityDescription, ...] = (
     RutOSSensorEntityDescription(
         key="rssi",
         translation_key="modem_rssi",
+        entity_registry_enabled_default=False,
         native_unit_of_measurement="dBm",
         device_class=SensorDeviceClass.SIGNAL_STRENGTH,
         state_class=SensorStateClass.MEASUREMENT,
@@ -218,6 +243,7 @@ MODEM_SIGNAL_SENSORS: tuple[RutOSSensorEntityDescription, ...] = (
     RutOSSensorEntityDescription(
         key="rsrp",
         translation_key="modem_rsrp",
+        entity_registry_enabled_default=False,
         native_unit_of_measurement="dBm",
         device_class=SensorDeviceClass.SIGNAL_STRENGTH,
         state_class=SensorStateClass.MEASUREMENT,
@@ -226,6 +252,7 @@ MODEM_SIGNAL_SENSORS: tuple[RutOSSensorEntityDescription, ...] = (
     RutOSSensorEntityDescription(
         key="rsrq",
         translation_key="modem_rsrq",
+        entity_registry_enabled_default=False,
         native_unit_of_measurement="dB",
         state_class=SensorStateClass.MEASUREMENT,
         value_fn=lambda m: m.get("rsrq"),
@@ -233,6 +260,7 @@ MODEM_SIGNAL_SENSORS: tuple[RutOSSensorEntityDescription, ...] = (
     RutOSSensorEntityDescription(
         key="sinr",
         translation_key="modem_sinr",
+        entity_registry_enabled_default=False,
         native_unit_of_measurement="dB",
         state_class=SensorStateClass.MEASUREMENT,
         value_fn=lambda m: m.get("sinr"),
@@ -287,7 +315,11 @@ async def async_setup_entry(
     """Set up RutOS sensors based on a config entry."""
     coordinator: RutOSDataUpdateCoordinator = entry.runtime_data
     entities: list[SensorEntity] = [
-        RutOSSensorEntity(coordinator, description, iface["name"], iface["label"])
+        (
+            RutOSConnectedSinceSensor
+            if description.key == "uptime"
+            else RutOSSensorEntity
+        )(coordinator, description, iface["name"], iface["label"])
         for iface in coordinator.data.wan_interfaces
         for description in INTERFACE_SENSORS
     ]
@@ -346,12 +378,39 @@ class RutOSSensorEntity(RutOSEntity, SensorEntity):
         self._attr_translation_placeholders = {"interface": label or interface_name}
 
     @property
-    def native_value(self) -> str | int | float | None:
+    def native_value(self) -> str | int | float | datetime | None:
         """Return the sensor value."""
         iface = self._find_interface(self._interface_name)
         if iface is None:
             return None
         return self.entity_description.value_fn(iface)
+
+
+class RutOSConnectedSinceSensor(RutOSSensorEntity):
+    """WAN interface connected-since timestamp, derived from uptime.
+
+    Reporting raw uptime seconds writes a new state every poll. A timestamp
+    floored to the minute and held until it moves by more than the jitter
+    tolerance only changes when the interface reconnects (issue #51).
+    """
+
+    _connected_since: datetime | None = None
+
+    @property
+    def native_value(self) -> datetime | None:
+        """Return when the interface connected, or None while it is down."""
+        iface = self._find_interface(self._interface_name)
+        uptime = self.entity_description.value_fn(iface) if iface else None
+        if not iface or iface.get("status") != "up" or not uptime:
+            self._connected_since = None
+            return None
+        since = dt_util.utcnow() - timedelta(seconds=float(uptime))
+        if (
+            self._connected_since is None
+            or abs(since - self._connected_since) > _CONNECTED_SINCE_TOLERANCE
+        ):
+            self._connected_since = since.replace(second=0, microsecond=0)
+        return self._connected_since
 
 
 class RutOSGPSSensorEntity(RutOSEntity, SensorEntity):
@@ -416,6 +475,10 @@ class RutOSDataLimitSensor(RutOSEntity, SensorEntity):
 
 class RutOSModemSignalSensor(RutOSEntity, SensorEntity):
     """Representation of a RutOS modem signal sensor."""
+
+    # Per-carrier RSRP/RSRQ/SINR on the bands sensor make every poll a new,
+    # undeduplicated attributes row; keep it live-only (issue #51).
+    _unrecorded_attributes = frozenset({"carriers"})
 
     entity_description: RutOSSensorEntityDescription
 

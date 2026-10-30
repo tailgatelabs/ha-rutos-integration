@@ -6,9 +6,8 @@ import asyncio
 from unittest.mock import Mock, patch
 
 import aiohttp
+from aioresponses import CallbackResult, aioresponses, core as aioresponses_core
 import pytest
-from aioresponses import CallbackResult, aioresponses
-from aioresponses import core as aioresponses_core
 from yarl import URL
 
 from custom_components.rutos.api import (
@@ -867,24 +866,33 @@ class TestGetActiveFailoverChain:
         m.get(_url("/failover/policies/config"), payload=_success(policies or []))
         m.get(_url("/failover/rules/config"), payload=_success(rules or []))
         m.get(_url("/failover/members/config"), payload=_success(members or []))
-        m.get(
-            _url("/failover/interfaces/config"), payload=_success(interfaces or [])
-        )
+        m.get(_url("/failover/interfaces/config"), payload=_success(interfaces or []))
 
     async def test_failover_mode_with_default_rule(self, api_client):
         """Default rule selects the failover policy; mode is 'failover'."""
         with aioresponses() as m:
             self._failover_setup(
                 m,
-                rules=[{"id": "default_rule", "name": "default_rule",
-                        "use_policy": "mwan_default"}],
-                policies=[{
-                    "id": "mwan_default", "name": "mwan",
-                    "use_member": ["mob1s1a1_member_mwan", "wan1_member_mwan"],
-                }],
+                rules=[
+                    {
+                        "id": "default_rule",
+                        "name": "default_rule",
+                        "use_policy": "mwan_default",
+                    }
+                ],
+                policies=[
+                    {
+                        "id": "mwan_default",
+                        "name": "mwan",
+                        "use_member": ["mob1s1a1_member_mwan", "wan1_member_mwan"],
+                    }
+                ],
                 members=[
-                    {"id": "mob1s1a1_member_mwan", "interface": "mob1s1a1",
-                     "metric": "1"},
+                    {
+                        "id": "mob1s1a1_member_mwan",
+                        "interface": "mob1s1a1",
+                        "metric": "1",
+                    },
                     {"id": "wan1_member_mwan", "interface": "wan1", "metric": "2"},
                 ],
                 interfaces=[
@@ -916,12 +924,20 @@ class TestGetActiveFailoverChain:
         with aioresponses() as m:
             self._failover_setup(
                 m,
-                rules=[{"id": "default_rule", "name": "default_rule",
-                        "use_policy": "mwan_default"}],
-                policies=[{
-                    "id": "mwan_default", "name": "mwan",
-                    "use_member": ["wan2_member_mwan"],
-                }],
+                rules=[
+                    {
+                        "id": "default_rule",
+                        "name": "default_rule",
+                        "use_policy": "mwan_default",
+                    }
+                ],
+                policies=[
+                    {
+                        "id": "mwan_default",
+                        "name": "mwan",
+                        "use_member": ["wan2_member_mwan"],
+                    }
+                ],
                 members=[
                     {"id": "wan2_member_mwan", "interface": "wifi1", "metric": "1"},
                 ],
@@ -939,12 +955,20 @@ class TestGetActiveFailoverChain:
         with aioresponses() as m:
             self._failover_setup(
                 m,
-                rules=[{"id": "default_rule", "name": "default_rule",
-                        "use_policy": "mwan_default"}],
-                policies=[{
-                    "id": "mwan_default", "name": "mwan",
-                    "use_member": ["orphan_member"],
-                }],
+                rules=[
+                    {
+                        "id": "default_rule",
+                        "name": "default_rule",
+                        "use_policy": "mwan_default",
+                    }
+                ],
+                policies=[
+                    {
+                        "id": "mwan_default",
+                        "name": "mwan",
+                        "use_member": ["orphan_member"],
+                    }
+                ],
                 members=[
                     {"id": "orphan_member", "interface": "ghost", "metric": "1"},
                 ],
@@ -959,19 +983,36 @@ class TestGetActiveFailoverChain:
         with aioresponses() as m:
             self._failover_setup(
                 m,
-                rules=[{"id": "default_rule", "name": "default_rule",
-                        "use_policy": "balance_default"}],
-                policies=[{
-                    "id": "balance_default", "name": "balance",
-                    "use_member": [
-                        "mob1s1a1_member_balance", "wan1_member_balance",
-                    ],
-                }],
+                rules=[
+                    {
+                        "id": "default_rule",
+                        "name": "default_rule",
+                        "use_policy": "balance_default",
+                    }
+                ],
+                policies=[
+                    {
+                        "id": "balance_default",
+                        "name": "balance",
+                        "use_member": [
+                            "mob1s1a1_member_balance",
+                            "wan1_member_balance",
+                        ],
+                    }
+                ],
                 members=[
-                    {"id": "mob1s1a1_member_balance", "interface": "mob1s1a1",
-                     "metric": "1", "weight": "1"},
-                    {"id": "wan1_member_balance", "interface": "wan1",
-                     "metric": "1", "weight": "1"},
+                    {
+                        "id": "mob1s1a1_member_balance",
+                        "interface": "mob1s1a1",
+                        "metric": "1",
+                        "weight": "1",
+                    },
+                    {
+                        "id": "wan1_member_balance",
+                        "interface": "wan1",
+                        "metric": "1",
+                        "weight": "1",
+                    },
                 ],
             )
             chain = await api_client.get_active_failover_chain()
@@ -984,10 +1025,10 @@ class TestGetActiveFailoverChain:
         with aioresponses() as m:
             self._failover_setup(
                 m,
-                rules=[{"id": "rule1", "name": "default_rule",
-                        "use_policy": "p1"}],
-                policies=[{"id": "p1", "name": "p1",
-                           "use_member": ["custom_a", "custom_b"]}],
+                rules=[{"id": "rule1", "name": "default_rule", "use_policy": "p1"}],
+                policies=[
+                    {"id": "p1", "name": "p1", "use_member": ["custom_a", "custom_b"]}
+                ],
                 members=[
                     {"id": "custom_a", "interface": "wan1", "metric": "1"},
                     {"id": "custom_b", "interface": "mob1", "metric": "2"},

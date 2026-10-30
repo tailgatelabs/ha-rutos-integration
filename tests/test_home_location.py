@@ -4,11 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, call, patch
 
-from homeassistant.config_entries import ConfigEntryState
-from homeassistant.core import HomeAssistant
-from homeassistant.helpers import issue_registry as ir
-
-from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_USERNAME
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.rutos.api import ModemData
 from custom_components.rutos.const import (
@@ -17,9 +13,10 @@ from custom_components.rutos.const import (
     ISSUE_HOME_ZONE_OVERRIDDEN,
 )
 from custom_components.rutos.coordinator import RutOSDataUpdateCoordinator
-
-from pytest_homeassistant_custom_component.common import MockConfigEntry
-
+from homeassistant.config_entries import ConfigEntryState
+from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_USERNAME
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers import issue_registry as ir
 
 MOCK_DEVICE_INFO = {
     "name": "RUTX50",

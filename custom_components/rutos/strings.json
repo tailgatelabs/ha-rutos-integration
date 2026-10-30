@@ -54,7 +54,7 @@
         "name": "{interface} protocol"
       },
       "wan_uptime": {
-        "name": "{interface} uptime"
+        "name": "{interface} connected since"
       },
       "active_wan": {
         "name": "Active WAN interface"

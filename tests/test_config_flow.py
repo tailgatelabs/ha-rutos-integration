@@ -6,13 +6,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from homeassistant import config_entries
-from homeassistant.core import HomeAssistant
-from homeassistant.data_entry_flow import FlowResultType
-
 from custom_components.rutos.api import RutOSAuthError, RutOSConnectionError
-from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_USERNAME
-
 from custom_components.rutos.const import (
     CONF_FAILOVER_GROUPS,
     CONF_MODEM,
@@ -21,7 +15,10 @@ from custom_components.rutos.const import (
     DOMAIN,
     SUBENTRY_TYPE_RECIPIENT,
 )
-
+from homeassistant import config_entries
+from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_USERNAME
+from homeassistant.core import HomeAssistant
+from homeassistant.data_entry_flow import FlowResultType
 
 USER_INPUT = {
     CONF_HOST: "192.168.1.1",
@@ -292,8 +289,7 @@ async def test_options_flow_balance_mode_shows_unavailable_step(
         "mode": "balance",
         "members": [
             {"id": "wan1_member_balance", "interface": "wan1", "metric": "1"},
-            {"id": "mob1s1a1_member_balance", "interface": "mob1s1a1",
-             "metric": "1"},
+            {"id": "mob1s1a1_member_balance", "interface": "mob1s1a1", "metric": "1"},
         ],
     }
     mock_config_entry.add_to_hass(hass)
@@ -411,8 +407,10 @@ async def test_recipient_subentry_multimodem_requires_choice(
     hass, mock_config_entry, mock_api, patched_rutos_api
 ):
     """When the router has >1 modem, modem must be picked."""
-    mock_api.get_modem_data.return_value = mock_api.get_modem_data.return_value._replace(
-        modems=[{"id": "modem1"}, {"id": "modem2"}]
+    mock_api.get_modem_data.return_value = (
+        mock_api.get_modem_data.return_value._replace(
+            modems=[{"id": "modem1"}, {"id": "modem2"}]
+        )
     )
     await _setup_entry(hass, mock_config_entry)
 
@@ -434,7 +432,9 @@ async def test_recipient_subentry_multimodem_requires_choice(
     await hass.async_block_till_done()
 
     assert result["type"] is FlowResultType.CREATE_ENTRY
-    assert list(mock_config_entry.subentries.values())[0].data[CONF_MODEM] == "modem2"
+    assert (
+        next(iter(mock_config_entry.subentries.values())).data[CONF_MODEM] == "modem2"
+    )
 
 
 async def test_recipient_subentry_reconfigure(

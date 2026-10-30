@@ -126,18 +126,23 @@ The first interface in the list gets the highest priority.
 ## GPS & Home Location
 
 The integration fetches GPS data from the router's `/gps/position/status`
-endpoint every 30 seconds. Eight GPS sensors are created automatically:
+endpoint every 30 seconds. Eight GPS sensors are created automatically; those
+marked † are disabled by default and can be enabled from the entity settings:
 
-| Sensor         | Description                  |
-| -------------- | ---------------------------- |
-| GPS Latitude   | Current latitude (°)         |
-| GPS Longitude  | Current longitude (°)        |
-| GPS Speed      | Current speed (km/h)         |
-| GPS Altitude   | Altitude above sea level (m) |
-| GPS Heading    | Direction of travel (°)      |
-| GPS Satellites | Number of visible satellites |
-| GPS Fix Status | Fix type (e.g., "2D", "3D")  |
-| GPS Accuracy   | Position accuracy (m)        |
+| Sensor           | Description                               |
+| ---------------- | ----------------------------------------- |
+| GPS Latitude     | Current latitude (°)                      |
+| GPS Longitude    | Current longitude (°)                     |
+| GPS Speed        | Current speed, rounded to 1 km/h          |
+| GPS Altitude     | Altitude above sea level, rounded to 10 m |
+| GPS Heading †    | Direction of travel (°)                   |
+| GPS Satellites † | Number of visible satellites              |
+| GPS Fix Status   | Fix type (e.g., "2D", "3D")               |
+| GPS Accuracy †   | Position accuracy, rounded to 1 m         |
+
+Speed, altitude, and accuracy are rounded so a parked vehicle doesn't record GPS
+noise as a new state on every poll. Latitude and longitude have no long-term
+statistics, since an hourly mean of a coordinate isn't meaningful.
 
 ### Home Location Updates
 
@@ -177,24 +182,33 @@ location from GPS**.
 
 ### Sensors
 
-| Entity                   | Description                                 | Unit |
-| ------------------------ | ------------------------------------------- | ---- |
-| `{interface} status`     | WAN interface status (up/down)              | —    |
-| `{interface} IP address` | WAN interface IPv4 address                  | —    |
-| `{interface} protocol`   | WAN interface protocol (dhcp, wwan, static) | —    |
-| `{interface} uptime`     | WAN interface uptime                        | s    |
-| `Active WAN interface`   | Name of the currently active WAN interface  | —    |
-| `{modem} RSSI`           | Received Signal Strength Indicator          | dBm  |
-| `{modem} RSRP`           | Reference Signal Received Power             | dBm  |
-| `{modem} RSRQ`           | Reference Signal Received Quality           | dB   |
-| `{modem} SINR`           | Signal-to-Interference-plus-Noise Ratio     | dB   |
-| `{modem} network type`   | Network technology (LTE, 5G, etc.)          | —    |
-| `{modem} band`           | Operating frequency band                    | —    |
-| `{modem} operator`       | Mobile network operator name                | —    |
-| `{modem} active SIM`     | Currently active SIM slot (dual-SIM modems) | —    |
-| `{limit} data used`      | Total data consumed                         | B    |
-| `{limit} data limit`     | Configured data cap                         | B    |
-| `{limit} data usage`     | Usage as percentage of limit                | %    |
+Sensors marked † are disabled by default. They change on most polls and are
+mainly useful when troubleshooting; enable them from the entity settings.
+
+| Entity                        | Description                                   | Unit      |
+| ----------------------------- | --------------------------------------------- | --------- |
+| `{interface} status`          | WAN interface status (up/down)                | —         |
+| `{interface} IP address`      | WAN interface IPv4 address                    | —         |
+| `{interface} protocol` †      | WAN interface protocol (dhcp, wwan, static)   | —         |
+| `{interface} connected since` | When the interface last connected (minute)    | timestamp |
+| `Active WAN interface`        | Name of the currently active WAN interface    | —         |
+| `{modem} RSSI` †              | Received Signal Strength Indicator            | dBm       |
+| `{modem} RSRP` †              | Reference Signal Received Power               | dBm       |
+| `{modem} RSRQ` †              | Reference Signal Received Quality             | dB        |
+| `{modem} SINR` †              | Signal-to-Interference-plus-Noise Ratio       | dB        |
+| `{modem} signal quality`      | Overall signal quality reported by the router | %         |
+| `{modem} network type`        | Network technology (LTE, 5G, etc.)            | —         |
+| `{modem} band`                | Operating frequency band                      | —         |
+| `{modem} bands`               | Aggregated carrier bands (see note below)     | —         |
+| `{modem} operator`            | Mobile network operator name                  | —         |
+| `{modem} active SIM`          | Currently active SIM slot (dual-SIM modems)   | —         |
+| `{limit} data used`           | Total data consumed                           | B         |
+| `{limit} data limit`          | Configured data cap                           | B         |
+| `{limit} data usage`          | Usage as percentage of limit                  | %         |
+
+The `bands` sensor exposes a `carriers` attribute with per-carrier band and
+signal details. It is shown live but not saved to the recorder database, since
+it changes on almost every poll; `primary_band` is recorded.
 
 ### Binary Sensors
 

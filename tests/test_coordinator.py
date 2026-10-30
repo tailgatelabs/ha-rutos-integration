@@ -7,9 +7,7 @@ from datetime import timedelta
 from unittest.mock import AsyncMock
 
 import pytest
-
-from homeassistant.core import HomeAssistant
-from homeassistant.helpers.update_coordinator import UpdateFailed
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.rutos.api import (
     RutOSAPIError,
@@ -21,8 +19,8 @@ from custom_components.rutos.const import (
     DEFAULT_SCAN_INTERVAL,
 )
 from custom_components.rutos.coordinator import RutOSData, RutOSDataUpdateCoordinator
-
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.update_coordinator import UpdateFailed
 
 
 async def test_async_setup_fetches_device_info(

@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, call, patch
 
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
+from custom_components.rutos.api import ModemData
 from custom_components.rutos.const import (
     CONF_UPDATE_HOME_LOCATION,
     DOMAIN,
@@ -77,8 +78,7 @@ def _mock_api(gps_position=None):
     api.get_internet_status.return_value = True
     api.get_gps_position.return_value = gps_position
     api.get_data_limit.return_value = []
-    api.get_modem_signal.return_value = []
-    api.get_modems.return_value = []
+    api.get_modem_data.return_value = ModemData(signal=[], status=[], modems=[])
     api.set_failover_order.return_value = None
     return api
 

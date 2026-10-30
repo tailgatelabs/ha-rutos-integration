@@ -7,10 +7,12 @@ DEFAULT_SCAN_INTERVAL = 30
 
 API_PATH = "/api"
 
-SESSION_REFRESH_MARGIN = 30  # Refresh 30s before expiry
 REQUEST_TIMEOUT = 15  # Seconds per HTTP request, including login
-# The router's API stalls requests when ~10+ arrive at once; 4 is reliable.
-MAX_CONCURRENT_REQUESTS = 4
+# Overlapping requests can wedge the router's web server until it is restarted
+# (#47), and running them in parallel saves only about a second per poll.
+MAX_CONCURRENT_REQUESTS = 1
+# Seconds between polls after 1, 2, and 3+ consecutive connection failures.
+CONNECTION_BACKOFF_INTERVALS = (60, 120, 300)
 
 SERVICE_SET_FAILOVER_ORDER = "set_failover_order"
 ATTR_INTERFACES = "interfaces"

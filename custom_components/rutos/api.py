@@ -4,17 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import time
-from typing import Any
+from typing import Any, NamedTuple
 
 import aiohttp
 
-from .const import (
-    API_PATH,
-    MAX_CONCURRENT_REQUESTS,
-    REQUEST_TIMEOUT,
-    SESSION_REFRESH_MARGIN,
-)
+from .const import API_PATH, MAX_CONCURRENT_REQUESTS, REQUEST_TIMEOUT
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -105,6 +99,82 @@ def _detect_failover_mode(members: list[dict[str, Any]]) -> str:
     return "balance" if len(metrics) == 1 else "failover"
 
 
+def _parse_modem_ids(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Extract modem identities; /modems/signal/status uses "modem" for the id."""
+    modems: list[dict[str, Any]] = []
+    for entry in entries:
+        modem_id = entry.get("id") or entry.get("modem")
+        if modem_id:
+            modems.append({"id": modem_id})
+    return modems
+
+
+def _parse_modem_signal(modem: dict[str, Any]) -> dict[str, Any]:
+    """Normalize signal metrics from a /modems/status entry."""
+    carriers = _normalize_carriers(modem.get("ca_signal"))
+    primary = next((c for c in carriers if c["primary"]), None)
+    if primary is not None:
+        band = primary["band"]
+        channel = primary["frequency"]
+    else:
+        band = modem.get("band")
+        channel = carriers[0]["frequency"] if carriers else None
+    return {
+        "id": modem.get("id") or modem.get("modem") or "",
+        "rssi": modem.get("rssi"),
+        "rsrp": modem.get("rsrp"),
+        "rsrq": modem.get("rsrq"),
+        "sinr": modem.get("sinr"),
+        "signal_quality": modem.get("signal_quality"),
+        "network_type": modem.get("conntype") or modem.get("ntype"),
+        "band": band,
+        "channel_number": channel,
+        "carriers": carriers,
+    }
+
+
+def _parse_modem_signal_samples(entry: dict[str, Any]) -> dict[str, Any]:
+    """Normalize a /modems/signal/status entry using its latest sample."""
+    samples = entry.get("signal")
+    if isinstance(samples, list) and samples and isinstance(samples[-1], dict):
+        src = samples[-1]
+    else:
+        src = entry
+    return {
+        "id": entry.get("id") or entry.get("modem") or "",
+        "rssi": src.get("rssi"),
+        "rsrp": src.get("rsrp"),
+        "rsrq": src.get("rsrq"),
+        "sinr": src.get("sinr"),
+        "signal_quality": src.get("signal_quality"),
+        "network_type": src.get("network_type"),
+        "band": src.get("band"),
+        "channel_number": src.get("channel_number"),
+        "carriers": [],
+    }
+
+
+def _parse_modem_status(modem: dict[str, Any]) -> dict[str, Any]:
+    """Extract operator and roaming state from a /modems/status entry."""
+    operator_state = str(modem.get("operator_state", ""))
+    return {
+        "id": modem.get("id", ""),
+        "operator": modem.get("operator"),
+        "roaming": "roaming" in operator_state.lower(),
+        "active_sim": modem.get("active_sim"),
+        "dual_sim": modem.get("dual_sim"),
+        "sim_count": modem.get("sim_count"),
+    }
+
+
+class ModemData(NamedTuple):
+    """Modem data parsed from a single /modems/status response."""
+
+    signal: list[dict[str, Any]]
+    status: list[dict[str, Any]]
+    modems: list[dict[str, Any]]
+
+
 class RutOSAPIError(Exception):
     """Base exception for RutOS API errors."""
 
@@ -134,7 +204,6 @@ class RutOSAPI:
         self._session = session
         self._base_url = f"https://{host}{API_PATH}"
         self._token: str | None = None
-        self._token_expiry: float = 0
         self._lock = asyncio.Lock()
         self._request_slots = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
 
@@ -158,24 +227,24 @@ class RutOSAPI:
         url = self._url(path)
         for attempt in range(2):
             await self._ensure_session()
-            headers = self._auth_headers()
             try:
-                async with (
-                    self._request_slots,
-                    self._session.request(
+                async with self._request_slots:
+                    # Read the token only once it's our turn: it may have been
+                    # replaced while this request was queued.
+                    sent_token = self._token
+                    async with self._session.request(
                         method,
                         url,
                         json=json_data,
-                        headers=headers,
+                        headers=self._auth_headers(),
                         ssl=False,
                         timeout=_TIMEOUT,
-                    ) as resp,
-                ):
-                    status = resp.status
-                    try:
-                        data = await resp.json(content_type=None)
-                    except (ValueError, aiohttp.ContentTypeError):
-                        data = None
+                    ) as resp:
+                        status = resp.status
+                        try:
+                            data = await resp.json(content_type=None)
+                        except (ValueError, aiohttp.ContentTypeError):
+                            data = None
             except TimeoutError as err:
                 raise RutOSConnectionError(
                     f"Timed out after {REQUEST_TIMEOUT}s requesting {path} "
@@ -191,7 +260,8 @@ class RutOSAPI:
             # Retry once on 401 with a fresh token
             if status == 401 and attempt == 0:
                 _LOGGER.debug("Got 401, re-authenticating")
-                self._token = None
+                if self._token == sent_token:
+                    self._token = None
                 continue
 
             if status == 401:
@@ -259,22 +329,37 @@ class RutOSAPI:
             raise RutOSAuthError("No token in login response")
 
         self._token = token
-        expires = token_data.get("expires", 300)
-        self._token_expiry = time.monotonic() + expires
-        _LOGGER.debug("Authenticated to %s (expires in %ds)", self._host, expires)
+        _LOGGER.debug("Authenticated to %s", self._host)
 
     async def _ensure_session(self) -> None:
-        """Ensure we have a valid token, refreshing if needed."""
+        """Log in if we have no token.
+
+        The router resets a token's timer on every request, so polling keeps it
+        alive indefinitely. Tokens are only replaced after the router rejects
+        one, because each login costs the router far more than a typical read.
+        """
         async with self._lock:
-            if (
-                self._token is None
-                or time.monotonic() > self._token_expiry - SESSION_REFRESH_MARGIN
-            ):
+            if self._token is None:
                 await self.login()
 
     async def get(self, path: str) -> Any:
         """Make an authenticated GET request."""
         return await self._request("GET", path)
+
+    async def _get_optional(self, path: str) -> Any:
+        """GET an endpoint the router may not offer, returning None if rejected.
+
+        Connection failures still propagate. They mean the router is struggling
+        rather than lacking a feature, so the poll must stop instead of carrying
+        on with more requests.
+        """
+        try:
+            return await self.get(path)
+        except RutOSConnectionError:
+            raise
+        except RutOSAPIError as err:
+            _LOGGER.debug("%s unavailable: %s", path, err)
+            return None
 
     async def put(self, path: str, data: dict[str, Any]) -> Any:
         """Make an authenticated PUT request."""
@@ -316,11 +401,7 @@ class RutOSAPI:
         # flag the router GUI and switch should track lives in /interfaces/config.
         # Fall back to is_up if the config endpoint is unavailable.
         config_by_id: dict[str, dict[str, Any]] = {}
-        try:
-            configs = await self.get("/interfaces/config")
-        except RutOSAPIError:
-            _LOGGER.debug("/interfaces/config unavailable; falling back to is_up")
-            configs = None
+        configs = await self._get_optional("/interfaces/config")
         if isinstance(configs, list):
             for cfg in configs:
                 if isinstance(cfg, dict) and cfg.get("area_type") == "wan":
@@ -360,12 +441,11 @@ class RutOSAPI:
 
     async def get_internet_status(self) -> bool:
         """Check if the router has internet connectivity."""
-        try:
-            data = await self.get("/internet_connection/status")
-            ipv4 = str(data.get("ipv4_status", "")).lower()
-            return ipv4 in ("connected", "online", "up")
-        except RutOSAPIError:
+        data = await self._get_optional("/internet_connection/status")
+        if not isinstance(data, dict):
             return False
+        ipv4 = str(data.get("ipv4_status", "")).lower()
+        return ipv4 in ("connected", "online", "up")
 
     async def set_interface_enabled(self, interface: str, enabled: bool) -> None:
         """Enable or disable a network interface."""
@@ -376,11 +456,7 @@ class RutOSAPI:
 
     async def get_data_limit(self) -> list[dict[str, Any]]:
         """Fetch data limit/usage status for all configured limits."""
-        try:
-            data = await self.get("/data_limit/status")
-        except RutOSAPIError:
-            return []
-
+        data = await self._get_optional("/data_limit/status")
         if not isinstance(data, list):
             return []
 
@@ -421,130 +497,32 @@ class RutOSAPI:
             {"data": {"number": number, "message": message, "modem": modem}},
         )
 
-    async def get_modems(self) -> list[dict[str, Any]]:
-        """Fetch list of available modems."""
-        try:
-            data = await self.get("/modems/status")
-        except RutOSAPIError:
-            try:
-                data = await self.get("/modems/signal/status")
-            except RutOSAPIError:
-                return []
+    async def get_modem_data(self) -> ModemData:
+        """Fetch signal, operator, and identity data for all modems.
 
-        if not isinstance(data, list):
-            return []
-
-        modems: list[dict[str, Any]] = []
-        for modem in data:
-            if not isinstance(modem, dict):
-                continue
-            # /modems/status uses "id"; /modems/signal/status uses "modem"
-            modem_id = modem.get("id") or modem.get("modem")
-            if modem_id:
-                modems.append({"id": modem_id})
-        return modems
-
-    async def get_modem_signal(self) -> list[dict[str, Any]]:
-        """Fetch signal strength data for all modems.
-
-        Prefers flat top-level fields from /modems/status (rssi, rsrp, rsrq,
-        sinr, signal_quality, band, conntype). Falls back to /modems/signal/status where
-        metrics live in a nested 'signal' array of historical samples.
+        /modems/status carries all three. /modems/signal/status, where metrics
+        live in a nested 'signal' array of historical samples, is only tried when
+        the router rejects /modems/status; an empty list just means no modems.
         """
-        try:
-            status = await self.get("/modems/status")
-        except RutOSAPIError:
-            status = None
-
-        if isinstance(status, list) and status:
-            modems: list[dict[str, Any]] = []
-            for modem in status:
-                if not isinstance(modem, dict):
-                    continue
-                carriers = _normalize_carriers(modem.get("ca_signal"))
-                primary = next((c for c in carriers if c["primary"]), None)
-                if primary is not None:
-                    band = primary["band"]
-                    channel = primary["frequency"]
-                else:
-                    band = modem.get("band")
-                    channel = carriers[0]["frequency"] if carriers else None
-                modems.append(
-                    {
-                        "id": modem.get("id") or modem.get("modem") or "",
-                        "rssi": modem.get("rssi"),
-                        "rsrp": modem.get("rsrp"),
-                        "rsrq": modem.get("rsrq"),
-                        "sinr": modem.get("sinr"),
-                        "signal_quality": modem.get("signal_quality"),
-                        "network_type": modem.get("conntype") or modem.get("ntype"),
-                        "band": band,
-                        "channel_number": channel,
-                        "carriers": carriers,
-                    }
-                )
-            return modems
-
-        try:
-            sig = await self.get("/modems/signal/status")
-        except RutOSAPIError:
-            return []
-        if not isinstance(sig, list):
-            return []
-
-        modems = []
-        for entry in sig:
-            if not isinstance(entry, dict):
-                continue
-            modem_id = entry.get("id") or entry.get("modem") or ""
-            samples = entry.get("signal")
-            if isinstance(samples, list) and samples and isinstance(samples[-1], dict):
-                src = samples[-1]
-            else:
-                src = entry
-            modems.append(
-                {
-                    "id": modem_id,
-                    "rssi": src.get("rssi"),
-                    "rsrp": src.get("rsrp"),
-                    "rsrq": src.get("rsrq"),
-                    "sinr": src.get("sinr"),
-                    "signal_quality": src.get("signal_quality"),
-                    "network_type": src.get("network_type"),
-                    "band": src.get("band"),
-                    "channel_number": src.get("channel_number"),
-                    "carriers": [],
-                }
+        status = await self._get_optional("/modems/status")
+        if isinstance(status, list):
+            modems = [m for m in status if isinstance(m, dict)]
+            return ModemData(
+                signal=[_parse_modem_signal(m) for m in modems],
+                status=[_parse_modem_status(m) for m in modems],
+                modems=_parse_modem_ids(modems),
             )
-        return modems
 
-    async def get_modem_status(self) -> list[dict[str, Any]]:
-        """Fetch operator and roaming status for all modems."""
-        try:
-            data = await self.get("/modems/status")
-        except RutOSAPIError:
-            return []
+        signal = await self._get_optional("/modems/signal/status")
+        if not isinstance(signal, list):
+            return ModemData(signal=[], status=[], modems=[])
 
-        if not isinstance(data, list):
-            return []
-
-        modems: list[dict[str, Any]] = []
-        for modem in data:
-            if not isinstance(modem, dict):
-                continue
-            modem_id = modem.get("id", "")
-            operator_state = str(modem.get("operator_state", ""))
-            modems.append(
-                {
-                    "id": modem_id,
-                    "operator": modem.get("operator"),
-                    "roaming": "roaming" in operator_state.lower(),
-                    "active_sim": modem.get("active_sim"),
-                    "dual_sim": modem.get("dual_sim"),
-                    "sim_count": modem.get("sim_count"),
-                }
-            )
-        return modems
+        entries = [e for e in signal if isinstance(e, dict)]
+        return ModemData(
+            signal=[_parse_modem_signal_samples(e) for e in entries],
+            status=[],
+            modems=_parse_modem_ids(entries),
+        )
 
     async def set_failover_order(self, member_ids: list[str]) -> None:
         """Set the failover order by updating mwan3 member metrics.
@@ -601,12 +579,10 @@ class RutOSAPI:
             members: list[dict] - member dicts in policy order with
                 ``network_id`` attached.
         """
-        policies, rules, all_members, fo_interfaces = await asyncio.gather(
-            self.get_failover_policies(),
-            self.get_failover_rules(),
-            self._get_all_failover_members(),
-            self.get_failover_interfaces(),
-        )
+        policies = await self.get_failover_policies()
+        rules = await self.get_failover_rules()
+        all_members = await self._get_all_failover_members()
+        fo_interfaces = await self.get_failover_interfaces()
 
         network_id_by_mwan_name = {
             fi.get("name"): fi.get("id")
@@ -646,11 +622,7 @@ class RutOSAPI:
         whether the interface actually passes traffic, not just link state.
         Returns ``{}`` when the endpoint is unavailable.
         """
-        try:
-            data = await self.get("/failover/status")
-        except RutOSAPIError:
-            _LOGGER.debug("/failover/status unavailable")
-            return {}
+        data = await self._get_optional("/failover/status")
         if not isinstance(data, dict):
             return {}
         return {k: v for k, v in data.items() if isinstance(v, dict)}
@@ -664,11 +636,7 @@ class RutOSAPI:
 
     async def get_gps_position(self) -> dict[str, Any] | None:
         """Fetch GPS position data (lat, lon, speed, altitude, etc.)."""
-        try:
-            data = await self.get("/gps/position/status")
-        except RutOSAPIError:
-            return None
-
+        data = await self._get_optional("/gps/position/status")
         if not isinstance(data, dict):
             return None
 

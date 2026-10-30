@@ -407,7 +407,11 @@ async def test_recipient_subentry_multimodem_requires_choice(
     hass, mock_config_entry, mock_api, patched_rutos_api
 ):
     """When the router has >1 modem, modem must be picked."""
-    mock_api.get_modems.return_value = [{"id": "modem1"}, {"id": "modem2"}]
+    mock_api.get_modem_data.return_value = (
+        mock_api.get_modem_data.return_value._replace(
+            modems=[{"id": "modem1"}, {"id": "modem2"}]
+        )
+    )
     await _setup_entry(hass, mock_config_entry)
 
     result = await hass.config_entries.subentries.async_init(

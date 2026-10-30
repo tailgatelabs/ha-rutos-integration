@@ -57,7 +57,7 @@ def _bands_attributes(modem: dict[str, Any]) -> dict[str, Any]:
     """Expose the raw carrier list and primary band on the bands sensor.
 
     ``band`` on the modem dict is already sourced from the primary carrier by
-    ``RutOSAPI.get_modem_signal`` when ``ca_signal`` is present, so reuse it
+    ``RutOSAPI.get_modem_data`` when ``ca_signal`` is present, so reuse it
     instead of re-searching the carriers list.
     """
     carriers = modem.get("carriers") or []

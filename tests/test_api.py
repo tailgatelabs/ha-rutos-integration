@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import asyncio
-import time
 from unittest.mock import Mock, patch
 
 import aiohttp
 from aioresponses import CallbackResult, aioresponses, core as aioresponses_core
 import pytest
+from yarl import URL
 
 from custom_components.rutos.api import (
     RutOSAPI,
@@ -20,7 +20,6 @@ from custom_components.rutos.const import (
     API_PATH,
     MAX_CONCURRENT_REQUESTS,
     REQUEST_TIMEOUT,
-    SESSION_REFRESH_MARGIN,
 )
 
 TEST_HOST = "192.168.1.1"
@@ -107,24 +106,13 @@ class TestLogin:
     """Tests for login/authentication."""
 
     async def test_login_success(self, api_client):
-        """Test successful login stores token and sets expiry."""
+        """Test successful login stores token."""
         with aioresponses() as m:
             m.post(_url("/login"), payload=_login_success())
 
             await api_client.login()
 
             assert api_client._token == TEST_TOKEN
-            assert api_client._token_expiry > time.monotonic()
-
-    async def test_login_custom_expiry(self, api_client):
-        """Test login respects the expires field from response."""
-        with aioresponses() as m:
-            m.post(_url("/login"), payload=_login_success(expires=600))
-
-            before = time.monotonic()
-            await api_client.login()
-
-            assert api_client._token_expiry >= before + 600
 
     async def test_login_invalid_credentials(self, api_client):
         """Test login with bad credentials raises RutOSAuthError."""
@@ -325,25 +313,63 @@ class TestTokenRetry:
             with pytest.raises(RutOSAuthError, match="Authentication required"):
                 await api_client.get("/test")
 
+    # aioresponses inspects async callbacks with a deprecated asyncio helper.
+    @pytest.mark.filterwarnings(
+        "ignore:'asyncio.iscoroutinefunction' is deprecated:DeprecationWarning"
+    )
+    async def test_401_keeps_token_replaced_while_in_flight(self, api_client):
+        """Test a 401 for a stale token doesn't discard its replacement."""
+
+        async def _rejected_after_refresh(url, **kwargs):
+            api_client._token = "token2"
+            return CallbackResult(status=401)
+
+        with aioresponses() as m:
+            m.post(_url("/login"), payload=_login_success("token1"))
+            m.get(_url("/test"), callback=_rejected_after_refresh)
+            m.get(_url("/test"), payload=_success({"retried": True}))
+
+            result = await api_client.get("/test")
+
+            assert result == {"retried": True}
+            assert api_client._token == "token2"
+            assert len(m.requests[("POST", URL(_url("/login")))]) == 1
+
+    async def test_queued_request_uses_current_token(self, api_client):
+        """Test a request queued behind another sends the latest token."""
+        with aioresponses() as m:
+            m.post(_url("/login"), payload=_login_success("token1"))
+            m.get(_url("/test"), payload=_success())
+
+            await api_client.login()
+            await api_client._request_slots.acquire()
+            queued = asyncio.create_task(api_client.get("/test"))
+            await asyncio.sleep(0)
+            api_client._token = "token2"
+            api_client._request_slots.release()
+            await queued
+
+            request = m.requests[("GET", URL(_url("/test")))][0]
+            assert request.kwargs["headers"]["Authorization"] == "Bearer token2"
+
 
 class TestEnsureSession:
     """Tests for session refresh logic."""
 
-    async def test_ensure_session_refreshes_near_expiry(self, api_client):
-        """Test session is refreshed when within margin of expiry."""
+    async def test_token_reused_past_reported_expiry(self, api_client):
+        """Test the token is kept until the router rejects it.
+
+        Requests reset the router's token timer, so the reported lifetime is
+        not a reason to log in again.
+        """
         with aioresponses() as m:
-            # First login
-            m.post(_url("/login"), payload=_login_success("token1"))
-            await api_client.login()
-            assert api_client._token == "token1"
+            m.post(_url("/login"), payload=_login_success(expires=0))
+            m.get(_url("/test"), payload=_success(), repeat=True)
 
-            # Simulate near-expiry
-            api_client._token_expiry = time.monotonic() + SESSION_REFRESH_MARGIN - 1
+            await api_client.get("/test")
+            await api_client.get("/test")
 
-            # Should trigger refresh
-            m.post(_url("/login"), payload=_login_success("token2"))
-            await api_client._ensure_session()
-            assert api_client._token == "token2"
+            assert len(m.requests[("POST", URL(_url("/login")))]) == 1
 
     async def test_ensure_session_reuses_valid(self, api_client):
         """Test no refresh when token is still fresh."""
@@ -459,6 +485,7 @@ class TestGetWanInterfaces:
         with aioresponses() as m:
             m.post(_url("/login"), payload=_login_success())
             m.get(_url("/interfaces/status"), payload=_success(interfaces))
+            m.get(_url("/interfaces/config"), payload=_success([]))
 
             result = await api_client.get_wan_interfaces()
 
@@ -495,6 +522,7 @@ class TestGetWanInterfaces:
         with aioresponses() as m:
             m.post(_url("/login"), payload=_login_success())
             m.get(_url("/interfaces/status"), payload=_success(interfaces))
+            m.get(_url("/interfaces/config"), payload=_success([]))
 
             result = await api_client.get_wan_interfaces()
 
@@ -520,6 +548,7 @@ class TestGetWanInterfaces:
         with aioresponses() as m:
             m.post(_url("/login"), payload=_login_success())
             m.get(_url("/interfaces/status"), payload=_success(interfaces))
+            m.get(_url("/interfaces/config"), payload=_success([]))
 
             result = await api_client.get_wan_interfaces()
 
@@ -544,6 +573,7 @@ class TestGetWanInterfaces:
         with aioresponses() as m:
             m.post(_url("/login"), payload=_login_success())
             m.get(_url("/interfaces/status"), payload=_success(interfaces))
+            m.get(_url("/interfaces/config"), payload=_success([]))
 
             result = await api_client.get_wan_interfaces()
 
@@ -573,6 +603,7 @@ class TestGetWanInterfaces:
         with aioresponses() as m:
             m.post(_url("/login"), payload=_login_success())
             m.get(_url("/interfaces/status"), payload=_success(interfaces))
+            m.get(_url("/interfaces/config"), payload=_success([]))
 
             result = await api_client.get_wan_interfaces()
 
@@ -595,6 +626,7 @@ class TestGetWanInterfaces:
         with aioresponses() as m:
             m.post(_url("/login"), payload=_login_success())
             m.get(_url("/interfaces/status"), payload=_success(interfaces))
+            m.get(_url("/interfaces/config"), payload=_success([]))
 
             result = await api_client.get_wan_interfaces()
 
@@ -681,6 +713,19 @@ class TestGetWanInterfaces:
 
             assert result[0]["enabled"] is True
 
+    async def test_get_wan_interfaces_config_connection_error_propagates(
+        self, api_client
+    ):
+        """A dropped connection on /interfaces/config is not a missing feature."""
+        status = [{"id": "wan", "area_type": "wan", "is_up": True, "metric": 1}]
+        with aioresponses() as m:
+            m.post(_url("/login"), payload=_login_success())
+            m.get(_url("/interfaces/status"), payload=_success(status))
+            m.get(_url("/interfaces/config"), exception=TimeoutError())
+
+            with pytest.raises(RutOSConnectionError):
+                await api_client.get_wan_interfaces()
+
 
 class TestGetInternetStatus:
     """Tests for get_internet_status."""
@@ -729,6 +774,15 @@ class TestGetInternetStatus:
             )
 
             assert await api_client.get_internet_status() is False
+
+    async def test_get_internet_status_connection_error_propagates(self, api_client):
+        """Test a timeout is reported as a failure, not as no internet."""
+        with aioresponses() as m:
+            m.post(_url("/login"), payload=_login_success())
+            m.get(_url("/internet_connection/status"), exception=TimeoutError())
+
+            with pytest.raises(RutOSConnectionError):
+                await api_client.get_internet_status()
 
 
 class TestSetInterfaceEnabled:
@@ -993,6 +1047,18 @@ class TestGetActiveFailoverChain:
 
         assert chain == {"policy_id": None, "mode": "failover", "members": []}
 
+    async def test_stops_at_first_connection_failure(self, api_client):
+        """No further config endpoints are queued once the router stops responding."""
+        with aioresponses() as m:
+            m.post(_url("/login"), payload=_login_success())
+            m.get(_url("/failover/policies/config"), exception=TimeoutError())
+
+            with pytest.raises(RutOSConnectionError):
+                await api_client.get_active_failover_chain()
+
+            gets = [key for key in m.requests if key[0] == "GET"]
+            assert len(gets) == 1
+
 
 class TestPostMethod:
     """Tests for the post() convenience method."""
@@ -1150,6 +1216,15 @@ class TestGetGPSPosition:
             result = await api_client.get_gps_position()
             assert result is None
 
+    async def test_get_gps_position_connection_error_propagates(self, api_client):
+        """Test a timeout is not mistaken for GPS being unavailable."""
+        with aioresponses() as m:
+            m.post(_url("/login"), payload=_login_success())
+            m.get(_url("/gps/position/status"), exception=TimeoutError())
+
+            with pytest.raises(RutOSConnectionError):
+                await api_client.get_gps_position()
+
     async def test_get_gps_position_non_dict(self, api_client):
         """Test returns None for non-dict response."""
         with aioresponses() as m:
@@ -1235,6 +1310,15 @@ class TestGetDataLimit:
             result = await api_client.get_data_limit()
             assert result == []
 
+    async def test_get_data_limit_connection_error_propagates(self, api_client):
+        """Test a timeout is not mistaken for no limits being configured."""
+        with aioresponses() as m:
+            m.post(_url("/login"), payload=_login_success())
+            m.get(_url("/data_limit/status"), exception=TimeoutError())
+
+            with pytest.raises(RutOSConnectionError):
+                await api_client.get_data_limit()
+
     async def test_get_data_limit_non_list(self, api_client):
         """Test returns empty list for non-list response."""
         with aioresponses() as m:
@@ -1281,7 +1365,7 @@ class TestRebootModem:
 
 
 class TestGetModems:
-    """Tests for get_modems."""
+    """Tests for the modem list from get_modem_data."""
 
     async def test_get_modems_success(self, api_client):
         """Test parsing modem list from /modems/status (top-level id)."""
@@ -1293,7 +1377,7 @@ class TestGetModems:
             m.post(_url("/login"), payload=_login_success())
             m.get(_url("/modems/status"), payload=_success(status_data))
 
-            result = await api_client.get_modems()
+            result = (await api_client.get_modem_data()).modems
 
             assert len(result) == 2
             assert result[0]["id"] == "2-1"
@@ -1312,7 +1396,7 @@ class TestGetModems:
                 payload=_success([{"modem": "2-1"}, {"modem": "3-1"}]),
             )
 
-            result = await api_client.get_modems()
+            result = (await api_client.get_modem_data()).modems
 
             assert [r["id"] for r in result] == ["2-1", "3-1"]
 
@@ -1322,7 +1406,7 @@ class TestGetModems:
             m.post(_url("/login"), payload=_login_success())
             m.get(_url("/modems/status"), payload=_success([]))
 
-            result = await api_client.get_modems()
+            result = (await api_client.get_modem_data()).modems
             assert result == []
 
     async def test_get_modems_api_error(self, api_client):
@@ -1335,12 +1419,12 @@ class TestGetModems:
                 payload=_error("Service unavailable"),
             )
 
-            result = await api_client.get_modems()
+            result = (await api_client.get_modem_data()).modems
             assert result == []
 
 
 class TestGetModemSignal:
-    """Tests for get_modem_signal."""
+    """Tests for the modem signal data from get_modem_data."""
 
     async def test_get_modem_signal_from_status(self, api_client):
         """Primary path: /modems/status has flat signal fields."""
@@ -1362,7 +1446,7 @@ class TestGetModemSignal:
             m.post(_url("/login"), payload=_login_success())
             m.get(_url("/modems/status"), payload=_success(status_data))
 
-            result = await api_client.get_modem_signal()
+            result = (await api_client.get_modem_data()).signal
 
             assert len(result) == 1
             assert result[0]["id"] == "2-1"
@@ -1383,7 +1467,7 @@ class TestGetModemSignal:
             m.post(_url("/login"), payload=_login_success())
             m.get(_url("/modems/status"), payload=_success(status_data))
 
-            result = await api_client.get_modem_signal()
+            result = (await api_client.get_modem_data()).signal
 
             assert result[0]["network_type"] == "LTE-A"
 
@@ -1421,7 +1505,7 @@ class TestGetModemSignal:
             m.get(_url("/modems/status"), payload=_error("unavailable"))
             m.get(_url("/modems/signal/status"), payload=_success(signal_data))
 
-            result = await api_client.get_modem_signal()
+            result = (await api_client.get_modem_data()).signal
 
             assert len(result) == 1
             assert result[0]["id"] == "2-1"
@@ -1431,14 +1515,14 @@ class TestGetModemSignal:
             assert result[0]["channel_number"] == 5060
 
     async def test_get_modem_signal_empty(self, api_client):
-        """Test returns empty list when no modems on either endpoint."""
+        """Test a router with no modems isn't sent the fallback request."""
         with aioresponses() as m:
             m.post(_url("/login"), payload=_login_success())
             m.get(_url("/modems/status"), payload=_success([]))
-            m.get(_url("/modems/signal/status"), payload=_success([]))
 
-            result = await api_client.get_modem_signal()
+            result = (await api_client.get_modem_data()).signal
             assert result == []
+            assert ("GET", URL(_url("/modems/signal/status"))) not in m.requests
 
     async def test_get_modem_signal_api_error(self, api_client):
         """Test returns empty list when both endpoints error."""
@@ -1450,7 +1534,7 @@ class TestGetModemSignal:
                 payload=_error("Service unavailable"),
             )
 
-            result = await api_client.get_modem_signal()
+            result = (await api_client.get_modem_data()).signal
             assert result == []
 
     async def test_get_modem_signal_non_list(self, api_client):
@@ -1460,7 +1544,7 @@ class TestGetModemSignal:
             m.get(_url("/modems/status"), payload=_success({"unexpected": True}))
             m.get(_url("/modems/signal/status"), payload=_success({"unexpected": True}))
 
-            result = await api_client.get_modem_signal()
+            result = (await api_client.get_modem_data()).signal
             assert result == []
 
     async def test_get_modem_signal_carrier_aggregation(self, api_client):
@@ -1499,7 +1583,7 @@ class TestGetModemSignal:
             m.post(_url("/login"), payload=_login_success())
             m.get(_url("/modems/status"), payload=_success(status_data))
 
-            result = await api_client.get_modem_signal()
+            result = (await api_client.get_modem_data()).signal
 
             assert len(result) == 1
             # Primary carrier (LTE B7) overrides the misleading top-level "5G N78".
@@ -1518,7 +1602,7 @@ class TestGetModemSignal:
             m.post(_url("/login"), payload=_login_success())
             m.get(_url("/modems/status"), payload=_success(status_data))
 
-            result = await api_client.get_modem_signal()
+            result = (await api_client.get_modem_data()).signal
             assert result[0]["carriers"] == []
             assert result[0]["band"] == "LTE B12"
 
@@ -1541,12 +1625,12 @@ class TestGetModemSignal:
             m.get(_url("/modems/status"), payload=_error("unavailable"))
             m.get(_url("/modems/signal/status"), payload=_success(signal_data))
 
-            result = await api_client.get_modem_signal()
+            result = (await api_client.get_modem_data()).signal
             assert result[0]["carriers"] == []
 
 
 class TestGetModemStatus:
-    """Tests for get_modem_status."""
+    """Tests for the modem operator data from get_modem_data."""
 
     async def test_get_modem_status_home(self, api_client):
         """Test parsing of modem status response with home network."""
@@ -1561,7 +1645,7 @@ class TestGetModemStatus:
             m.post(_url("/login"), payload=_login_success())
             m.get(_url("/modems/status"), payload=_success(status_data))
 
-            result = await api_client.get_modem_status()
+            result = (await api_client.get_modem_data()).status
 
             assert len(result) == 1
             assert result[0]["id"] == "2-1"
@@ -1581,7 +1665,7 @@ class TestGetModemStatus:
             m.post(_url("/login"), payload=_login_success())
             m.get(_url("/modems/status"), payload=_success(status_data))
 
-            result = await api_client.get_modem_status()
+            result = (await api_client.get_modem_data()).status
 
             assert len(result) == 1
             assert result[0]["operator"] == "AT&T"
@@ -1593,7 +1677,7 @@ class TestGetModemStatus:
             m.post(_url("/login"), payload=_login_success())
             m.get(_url("/modems/status"), payload=_success([]))
 
-            result = await api_client.get_modem_status()
+            result = (await api_client.get_modem_data()).status
             assert result == []
 
     async def test_get_modem_status_api_error(self, api_client):
@@ -1604,8 +1688,12 @@ class TestGetModemStatus:
                 _url("/modems/status"),
                 payload=_error("Service unavailable"),
             )
+            m.get(
+                _url("/modems/signal/status"),
+                payload=_error("Service unavailable"),
+            )
 
-            result = await api_client.get_modem_status()
+            result = (await api_client.get_modem_data()).status
             assert result == []
 
     async def test_get_modem_status_non_list(self, api_client):
@@ -1613,9 +1701,39 @@ class TestGetModemStatus:
         with aioresponses() as m:
             m.post(_url("/login"), payload=_login_success())
             m.get(_url("/modems/status"), payload=_success({"unexpected": True}))
+            m.get(_url("/modems/signal/status"), payload=_success({"unexpected": True}))
 
-            result = await api_client.get_modem_status()
+            result = (await api_client.get_modem_data()).status
             assert result == []
+
+
+class TestGetModemData:
+    """Tests for how get_modem_data uses the router."""
+
+    async def test_single_request_supplies_all_modem_data(self, api_client):
+        """Signal, operator, and identity all come from one /modems/status call."""
+        status_data = [{"id": "2-1", "rssi": -73, "operator": "Bell"}]
+        with aioresponses() as m:
+            m.post(_url("/login"), payload=_login_success())
+            m.get(_url("/modems/status"), payload=_success(status_data))
+
+            result = await api_client.get_modem_data()
+
+            assert result.signal[0]["rssi"] == -73
+            assert result.status[0]["operator"] == "Bell"
+            assert result.modems == [{"id": "2-1"}]
+            assert len(m.requests[("GET", URL(_url("/modems/status")))]) == 1
+
+    async def test_connection_error_skips_fallback(self, api_client):
+        """A stalled router isn't sent the fallback request as well."""
+        with aioresponses() as m:
+            m.post(_url("/login"), payload=_login_success())
+            m.get(_url("/modems/status"), exception=TimeoutError())
+
+            with pytest.raises(RutOSConnectionError):
+                await api_client.get_modem_data()
+
+            assert ("GET", URL(_url("/modems/signal/status"))) not in m.requests
 
 
 class TestGetFailoverStatus:
@@ -1657,6 +1775,15 @@ class TestGetFailoverStatus:
             result = await api_client.get_failover_status()
 
             assert result == {}
+
+    async def test_connection_error_propagates(self, api_client):
+        """A timeout is not mistaken for the endpoint being unavailable."""
+        with aioresponses() as m:
+            m.post(_url("/login"), payload=_login_success())
+            m.get(_url("/failover/status"), exception=TimeoutError())
+
+            with pytest.raises(RutOSConnectionError):
+                await api_client.get_failover_status()
 
     async def test_non_dict_returns_empty(self, api_client):
         """Unexpected payload shape degrades to an empty dict."""

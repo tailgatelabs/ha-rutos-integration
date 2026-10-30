@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.rutos.api import RutOSAPI
+from custom_components.rutos.api import ModemData, RutOSAPI
 from custom_components.rutos.const import DOMAIN
 from custom_components.rutos.coordinator import RutOSData, RutOSDataUpdateCoordinator
 from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_USERNAME
@@ -142,7 +142,7 @@ def mock_modem_signal() -> list[dict]:
 def mock_modem_signal_nsa_ca() -> list[dict]:
     """Return mock modem signal data for a 5G-NSA 3CA LTE + 2x N78 NR configuration.
 
-    Shape mirrors the normalized output of ``RutOSAPI.get_modem_signal`` when the
+    Shape mirrors the normalized output of ``RutOSAPI.get_modem_data`` when the
     router reports ``ca_signal`` entries. The top-level ``band`` is sourced from
     the primary carrier (LTE B7), not the top-level NR anchor.
     """
@@ -328,23 +328,23 @@ def mock_api(mock_device_info, mock_wan_interfaces) -> AsyncMock:
         },
     ]
     api.clear_data_usage.return_value = None
-    api.get_modem_signal.return_value = [
-        {
-            "id": "modem1",
-            "rssi": -65,
-            "rsrp": -95,
-            "rsrq": -10,
-            "sinr": 12,
-            "signal_quality": 71,
-            "network_type": "LTE",
-            "band": "B7",
-            "channel_number": 3100,
-        },
-    ]
-    api.get_modem_status.return_value = [
-        {"id": "modem1", "operator": "T-Mobile", "roaming": False},
-    ]
-    api.get_modems.return_value = [{"id": "modem1"}]
+    api.get_modem_data.return_value = ModemData(
+        signal=[
+            {
+                "id": "modem1",
+                "rssi": -65,
+                "rsrp": -95,
+                "rsrq": -10,
+                "sinr": 12,
+                "signal_quality": 71,
+                "network_type": "LTE",
+                "band": "B7",
+                "channel_number": 3100,
+            },
+        ],
+        status=[{"id": "modem1", "operator": "T-Mobile", "roaming": False}],
+        modems=[{"id": "modem1"}],
+    )
     api.get_active_failover_chain.return_value = {
         "policy_id": "mwan_default",
         "mode": "failover",

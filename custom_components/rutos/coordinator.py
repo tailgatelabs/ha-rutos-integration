@@ -2,32 +2,19 @@
 
 from __future__ import annotations
 
-import asyncio
 from dataclasses import dataclass, field
 from datetime import timedelta
 import logging
-from typing import Any, cast
+from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .api import RutOSAPI, RutOSAPIError, RutOSAuthError
-from .const import DEFAULT_SCAN_INTERVAL, DOMAIN
+from .api import RutOSAPI, RutOSAPIError, RutOSAuthError, RutOSConnectionError
+from .const import CONNECTION_BACKOFF_INTERVALS, DEFAULT_SCAN_INTERVAL, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
-
-type _UpdateResult = tuple[
-    list[dict[str, Any]],
-    bool,
-    dict[str, Any] | None,
-    list[dict[str, Any]],
-    list[dict[str, Any]],
-    list[dict[str, Any]],
-    list[dict[str, Any]],
-    dict[str, Any],
-    dict[str, dict[str, Any]],
-]
 
 
 @dataclass
@@ -71,6 +58,7 @@ class RutOSDataUpdateCoordinator(DataUpdateCoordinator[RutOSData]):
             update_interval=timedelta(seconds=DEFAULT_SCAN_INTERVAL),
         )
         self.api = api
+        self._connection_failures = 0
 
     async def _async_setup(self) -> None:
         """Fetch static device info on first refresh."""
@@ -86,39 +74,46 @@ class RutOSDataUpdateCoordinator(DataUpdateCoordinator[RutOSData]):
         self.data.device_info = device_info
 
     async def _async_update_data(self) -> RutOSData:
-        """Fetch WAN interface data and internet status in parallel."""
+        """Fetch router state one endpoint at a time.
+
+        A connection failure ends the poll, so a struggling router isn't sent
+        the remaining requests.
+        """
         if self.data is None:
             self.data = RutOSData()
 
         try:
-            results = cast(
-                _UpdateResult,
-                await asyncio.gather(
-                    self.api.get_wan_interfaces(),
-                    self.api.get_internet_status(),
-                    self.api.get_gps_position(),
-                    self.api.get_data_limit(),
-                    self.api.get_modem_signal(),
-                    self.api.get_modem_status(),
-                    self.api.get_modems(),
-                    self.api.get_active_failover_chain(),
-                    self.api.get_failover_status(),
-                ),
-            )
+            wan_interfaces = await self.api.get_wan_interfaces()
+            internet_available = await self.api.get_internet_status()
+            gps_position = await self.api.get_gps_position()
+            data_limit = await self.api.get_data_limit()
+            modem_data = await self.api.get_modem_data()
+            failover_chain = await self.api.get_active_failover_chain()
+            failover_status = await self.api.get_failover_status()
+        except RutOSConnectionError as err:
+            self._back_off()
+            raise UpdateFailed(f"Error communicating with API: {err}") from err
         except RutOSAuthError as err:
             raise UpdateFailed(f"Authentication failed: {err}") from err
         except RutOSAPIError as err:
             raise UpdateFailed(f"Error communicating with API: {err}") from err
 
-        (
-            self.data.wan_interfaces,
-            self.data.internet_available,
-            self.data.gps_position,
-            self.data.data_limit,
-            self.data.modem_signal,
-            self.data.modem_status,
-            self.data.modems,
-            self.data.failover_chain,
-            self.data.failover_status,
-        ) = results
+        self._connection_failures = 0
+        self.update_interval = timedelta(seconds=DEFAULT_SCAN_INTERVAL)
+
+        self.data.wan_interfaces = wan_interfaces
+        self.data.internet_available = internet_available
+        self.data.gps_position = gps_position
+        self.data.data_limit = data_limit
+        self.data.modem_signal = modem_data.signal
+        self.data.modem_status = modem_data.status
+        self.data.modems = modem_data.modems
+        self.data.failover_chain = failover_chain
+        self.data.failover_status = failover_status
         return self.data
+
+    def _back_off(self) -> None:
+        """Poll less often while the router is failing to respond."""
+        step = min(self._connection_failures, len(CONNECTION_BACKOFF_INTERVALS) - 1)
+        self.update_interval = timedelta(seconds=CONNECTION_BACKOFF_INTERVALS[step])
+        self._connection_failures += 1

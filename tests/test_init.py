@@ -5,22 +5,18 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, patch
 
 import pytest
-
-from homeassistant.config_entries import ConfigEntryState
-from homeassistant.core import HomeAssistant
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.rutos.api import RutOSAuthError
-from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_USERNAME
-
 from custom_components.rutos.const import (
     ATTR_INTERFACES,
     DOMAIN,
     SERVICE_SET_FAILOVER_ORDER,
 )
 from custom_components.rutos.coordinator import RutOSDataUpdateCoordinator
-
-from pytest_homeassistant_custom_component.common import MockConfigEntry
-
+from homeassistant.config_entries import ConfigEntryState
+from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_USERNAME
+from homeassistant.core import HomeAssistant
 
 MOCK_DEVICE_INFO = {
     "name": "RUTX50",
@@ -186,8 +182,7 @@ async def test_set_failover_order_service_balance_mode_errors(
         "mode": "balance",
         "members": [
             {"id": "wan_member_balance", "interface": "wan", "metric": "1"},
-            {"id": "mob1s1a1_member_balance", "interface": "mob1s1a1",
-             "metric": "1"},
+            {"id": "mob1s1a1_member_balance", "interface": "mob1s1a1", "metric": "1"},
         ],
     }
     entry = _create_entry(hass)

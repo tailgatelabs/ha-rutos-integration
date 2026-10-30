@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-from homeassistant.components.binary_sensor import BinarySensorDeviceClass
-
 from custom_components.rutos.binary_sensor import (
     RutOSInternetConnectivitySensor,
     RutOSModemRoamingSensor,
 )
 from custom_components.rutos.coordinator import RutOSDataUpdateCoordinator
+from homeassistant.components.binary_sensor import BinarySensorDeviceClass
 
 
 class TestRutOSInternetConnectivitySensor:

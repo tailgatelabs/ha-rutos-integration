@@ -54,11 +54,13 @@ class TestRutosSmsNotifyEntity:
         entity = RutosSmsNotifyEntity(mock_coordinator, _make_subentry(name="Bob"))
         assert entity.name == "SMS Bob"
 
-    def test_does_not_claim_router_device(self, mock_coordinator: RutOSDataUpdateCoordinator):
+    def test_does_not_claim_router_device(
+        self, mock_coordinator: RutOSDataUpdateCoordinator
+    ):
         """Recipients must not reuse the router's device (it would move it)."""
         entity = RutosSmsNotifyEntity(mock_coordinator, _make_subentry())
-        assert entity.device_info is None    
-    
+        assert entity.device_info is None
+
     async def test_send_uses_explicit_modem(
         self, mock_coordinator: RutOSDataUpdateCoordinator
     ):

@@ -10,6 +10,7 @@ from homeassistant.config_entries import ConfigSubentry
 from homeassistant.const import CONF_NAME
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import RutOSConfigEntry
@@ -52,6 +53,15 @@ class RutosSmsNotifyEntity(RutOSEntity, NotifyEntity):
         self._attr_name = f"SMS {recipient_name}"
         serial = coordinator.data.device_info.get("serial", "")
         self._attr_unique_id = f"{serial}_sms_{subentry.subentry_id}"
+
+    @property
+    def device_info(self) -> DeviceInfo | None:
+        """Return no device: a recipient must not claim the router device.
+
+        A device belongs to a single subentry, so sharing the router device
+        would move it into the recipient's subentry.
+        """
+        return None
 
     def _resolve_modem(self) -> str:
         """Return the modem id to send through, or raise HomeAssistantError."""
